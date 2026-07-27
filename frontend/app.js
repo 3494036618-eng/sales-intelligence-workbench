@@ -1,0 +1,2462 @@
+(function () {
+  const $ = (selector, root = document) => root.querySelector(selector);
+  const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
+  const defaultApiBase = ["http:", "https:"].includes(window.location.protocol)
+    ? `${window.location.origin}/api`
+    : "http://127.0.0.1:8787/api";
+  const API_BASE = (window.AGENT_DEMO_API_BASE || defaultApiBase).replace(/\/$/, "");
+  const runtimeParams = new URLSearchParams(window.location.search);
+  const requestedMode = String(
+    window.SALES_WORKBENCH_MODE
+      || runtimeParams.get("mode")
+      || (runtimeParams.has("safe-demo") ? "demo" : "development")
+  ).toLowerCase();
+  const APP_MODE = ["development", "production", "demo"].includes(requestedMode)
+    ? requestedMode
+    : "development";
+  const DEMO_MODE = APP_MODE === "demo";
+  const authRedirectParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+  const authRedirectType = String(authRedirectParams.get("type") || "").toLowerCase();
+  let recoveryAccessToken = authRedirectType === "recovery"
+    ? String(authRedirectParams.get("access_token") || "")
+    : "";
+  if (recoveryAccessToken) {
+    window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+  }
+  const isPlaceholderUrl = (value) => /(^https?:\/\/)?(www\.)?example\.(com|test)\b/i.test(String(value || ""));
+  const TARGET_STATUS_FILTERS = ["全部", "新商机", "初步接触", "需求确认", "商务推进", "成交归档"];
+  const MATERIAL_FILTERS = ["全部", "档案", "飞书会话", "云文档"];
+  const DOSSIER_SECTION_TITLES = [
+    "企业与业务概览",
+    "经营与业务动态",
+    "近期公开动态",
+    "风险与关注事项",
+    "销售机会判断",
+    "建议行动",
+  ];
+  const QA_SECTION_HEADING_SOURCE = "结论|依据(?:[（(][^）)]+[）)])?|当前情况|关键发现|风险|建议|下一步|行动(?:项)?|资料缺口|补充说明";
+  const QA_SECTION_HEADING_PATTERN = new RegExp(`^(${QA_SECTION_HEADING_SOURCE})[：:]\\s*([\\s\\S]+)$`);
+  const {
+    collapseRepeatedCitationRuns,
+    dedupeCitationEntries,
+    normalizeChineseTypography,
+    splitReadableBlocks,
+  } = window.SalesTextFormat;
+
+  let goals = [
+    {
+      id: "auto",
+      name: "新能源车企合作跟进",
+      stats: "4 家企业",
+      placeholder: "输入新能源车企、区域或公司关键词",
+      related: ["byd_auto", "qichen", "lanche", "futureAuto", "lianhePower", "haichuan"],
+      pool: ["shanghaiAuto", "qichen", "haichuan", "lanche"],
+    },
+    {
+      id: "finance",
+      name: "华东金融机构拓展",
+      stats: "2 家企业",
+      placeholder: "输入金融机构、区域或公司关键词",
+      related: ["pujiangBank", "haorongSec", "donghaiTrust", "yunqiFin"],
+      pool: ["pujiangBank", "haorongSec"],
+    },
+    {
+      id: "manufacturing",
+      name: "制造业智能化升级",
+      stats: "0 家企业",
+      placeholder: "输入制造业、工厂或区域关键词",
+      related: ["mingzhou", "kecheng", "hengyuan"],
+      pool: [],
+    },
+  ];
+
+  let companies = {
+    qichen: {
+      id: "qichen",
+      name: "云衡智行科技有限公司",
+      initial: "小",
+      location: "广州市",
+      industry: "新能源汽车",
+      tags: ["新能源汽车", "广州市", "智能驾驶"],
+      status: "需求确认中",
+      progress:
+        "历史会议提到数据安全和私有化部署，但暂未确认预算和排期。",
+      evidence: "依据：会议纪要、已有企业档案、公开来源",
+      next: "下一步重点确认预算窗口、数据合规要求和供应商准入流程。",
+      updatedAt: "2025-06-15 18:30",
+      updates: [
+        {
+          id: "qichen-dossier-001",
+          title: "智能座舱方向资料更新",
+          body:
+            "公开资料显示，智能座舱与数据服务方向适合作为下一轮需求验证背景。",
+          type: "公开资料更新",
+          date: "2025-06-13",
+          url: "",
+        },
+        {
+          id: "qichen-dossier-002",
+          title: "供应商合作资料更新",
+          body:
+            "供应商合作资料可用于判断企业对智能化、数据安全和合规管理的关注点。",
+          type: "公开资料更新",
+          date: "2025-06-10",
+          url: "",
+        },
+        {
+          id: "qichen-dossier-003",
+          title: "数据合规资料更新",
+          body:
+            "数据合规资料可用于补充车企数据安全与隐私合规方向判断。",
+          type: "公开资料更新",
+          date: "2025-06-07",
+          url: "",
+        },
+        {
+          id: "qichen-dossier-004",
+          title: "自动驾驶数据方向资料更新",
+          body:
+            "专业数据集资料可用于补充自动驾驶数据服务方向的销售背景。",
+          type: "企业工商数据库",
+          date: "2025-06-05",
+          url: "",
+        },
+        {
+          id: "qichen-dossier-005",
+          title: "云服务合作资料更新",
+          body:
+            "公开资料可用于补充云底座、数据安全与 AI 应用方向的沟通背景。",
+          type: "公开资料更新",
+          date: "2025-05-30",
+          url: "",
+        },
+      ],
+      library: [
+        { title: "Q2 车企智能化合作会议纪要", time: "2025-06-14 18:30" },
+        { title: "智能座舱方案讨论记录", time: "2025-06-10 16:45" },
+        { title: "历史沟通摘录", time: "2025-06-06 11:20" },
+      ],
+      qaAnswer:
+        "历史会议纪要显示，对方重点关注数据安全、私有化部署和供应商准入流程；目前资料中尚未确认预算和排期。",
+    },
+    shanghaiAuto: {
+      id: "shanghaiAuto",
+      name: "曜驰智能汽车科技有限公司",
+      initial: "蔚",
+      location: "上海市",
+      industry: "新能源汽车",
+      tags: ["新能源汽车", "上海市", "智能座舱"],
+      status: "商务推进",
+      progress: "车主服务与售后数字化机会明确，适合推进小范围PoC。",
+      evidence: "依据：企业档案、飞书资料、公开资料更新",
+      next: "下一步确认试点负责人、知识库范围、数据权限和预算窗口。",
+      updatedAt: "2025-06-12 10:00",
+      updates: [
+        {
+          id: "shanghai-auto-dossier-001",
+          title: "车主服务与售后数字化机会更新",
+          body: "最新资料显示，曜驰的跟进机会已从单一智能座舱问答扩展到车主服务知识库、换电补能咨询、售后工单协同和用户运营问答四类场景。",
+          type: "公开资料更新",
+          date: "2025-06-12",
+          url: "",
+        },
+      ],
+      library: [
+        { title: "曜驰智能座舱合作会议纪要", time: "2026-06-14 15:20", sourceType: "飞书会议纪要" },
+        { title: "曜驰客户成功方案云文档", time: "2026-06-13 19:10", sourceType: "云文档" },
+        { title: "曜驰近期沟通摘要", time: "2026-06-12 11:40", sourceType: "飞书会话" },
+      ],
+      qaAnswer:
+        "建议先确认试点范围、数据权限和预算窗口；这些信息补齐后，可以推进到试点方案和报价沟通。",
+    },
+    byd_auto: {
+      id: "byd_auto",
+      name: "星澜新能源科技有限公司",
+      initial: "比",
+      location: "深圳市",
+      industry: "新能源汽车",
+      tags: ["新能源汽车", "深圳市", "动力电池", "智能座舱"],
+      status: "新商机",
+      progress: "新加入目标企业，尚无历史资料，待生成最新档案。",
+      evidence: "依据：专业数据库、公开来源",
+      next: "下一步生成最新档案，并确认对接部门、试点场景和预算窗口。",
+      updatedAt: "2026-06-16 09:30",
+      updates: [],
+      library: [],
+      qaAnswer: "当前企业为新加入目标企业，尚无历史资料；请先生成最新档案后再围绕当前进展提问。",
+    },
+    lanche: {
+      id: "lanche",
+      name: "凌越汽车科技有限公司",
+      initial: "极",
+      industry: "新能源汽车",
+      location: "杭州市",
+      status: "新商机",
+      progress: "已进入目标企业池，等待获取最近档案和历史沟通资料。",
+      tags: ["新能源汽车", "杭州市", "智能座舱"],
+    },
+    futureAuto: { id: "futureAuto", name: "辰途汽车科技有限公司", initial: "零", industry: "新能源汽车", location: "杭州市" },
+    lianhePower: { id: "lianhePower", name: "青瓴动力科技有限公司", initial: "青", industry: "动力电池", location: "宁德市" },
+    haichuan: {
+      id: "haichuan",
+      name: "远舟汽车科技有限公司",
+      initial: "理",
+      industry: "新能源汽车",
+      location: "北京市",
+      status: "初步接触",
+      progress: "已有公开信息和基础企业档案，尚未形成明确采购计划。",
+      tags: ["新能源汽车", "家庭智能车", "北京市"],
+    },
+    pujiangBank: { id: "pujiangBank", name: "浦江数字银行股份有限公司", initial: "浦", industry: "银行", location: "深圳市" },
+    haorongSec: { id: "haorongSec", name: "浩融证券股份有限公司", initial: "浩", industry: "证券", location: "北京市" },
+    donghaiTrust: { id: "donghaiTrust", name: "东澜信托有限责任公司", initial: "东", industry: "信托", location: "深圳市" },
+    yunqiFin: { id: "yunqiFin", name: "云启金融科技集团股份有限公司", initial: "云", industry: "金融科技", location: "杭州市" },
+    mingzhou: { id: "mingzhou", name: "明洲精密制造有限公司", initial: "明", industry: "精密制造", location: "宁波" },
+    kecheng: { id: "kecheng", name: "科承工业设备有限公司", initial: "科", industry: "工业设备", location: "苏州" },
+    hengyuan: { id: "hengyuan", name: "恒源智能装备有限公司", initial: "恒", industry: "智能装备", location: "常州" },
+  };
+
+  function yaochiQaMessages() {
+    return [
+      {
+        role: "user",
+        text: "曜驰为什么适合继续推进？",
+      },
+      {
+        role: "assistant",
+        text: "最新档案和历史资料都指向售后服务数字化、车主服务知识库和门店工单协同，需求方向比较聚焦，适合继续推进小范围PoC。",
+        citations: ["车主服务与售后数字化机会更新", "曜驰智能座舱合作会议纪要"],
+      },
+      {
+        role: "user",
+        text: "下一次和曜驰沟通，应该先确认哪些问题？",
+      },
+      {
+        role: "assistant",
+        text: "建议先确认三件事：试点范围是否聚焦售后服务知识库，数据权限是否允许进入私有化环境，以及预算窗口是否能覆盖本季度试点。",
+        citations: ["曜驰智能座舱合作会议纪要", "曜驰客户成功方案云文档"],
+      },
+      {
+        role: "user",
+        text: "现在推进到商务前，还缺哪类资料？",
+      },
+      {
+        role: "assistant",
+        text: "当前还缺预算窗口、试点部门负责人和技术对接人信息；如果这三项补齐，就可以推进到试点方案和报价沟通。",
+        citations: ["曜驰近期沟通摘要", "曜驰智能座舱合作会议纪要"],
+      },
+      {
+        role: "user",
+        text: "如果只做一期PoC，先从哪个场景切入？",
+      },
+      {
+        role: "assistant",
+        text: "建议先从售后服务知识库切入，范围可控、资料来源明确，也更容易用响应准确率、工单处理时长和服务顾问采纳率衡量效果。",
+        citations: ["曜驰客户成功方案云文档", "曜驰近期沟通摘要"],
+      },
+    ];
+  }
+
+  const state = {
+    activeGoalId: "auto",
+    activeCompanyId: "shanghaiAuto",
+    selectedDossierId: "qichen-dossier-001",
+    targetStatusFilter: "全部",
+    materialFilter: "全部",
+    query: "",
+    hasSearched: false,
+    showNewGoal: false,
+    bootLoading: true,
+    bootError: "",
+    auth: {
+      checked: DEMO_MODE,
+      enabled: false,
+      authenticated: DEMO_MODE,
+      bootstrapRequired: false,
+      user: null,
+    },
+    authBusy: "",
+    authError: "",
+    authNotice: "",
+    authView: recoveryAccessToken ? "update" : "login",
+    authPrefillEmail: "",
+    feishuImportOpen: false,
+    feishuImportAvailable: null,
+    feishuImportKind: "conversation",
+    feishuImportDraft: { target: "", start: "", end: "" },
+    feishuImportTask: null,
+    feishuImportError: "",
+    busy: "",
+    qaPendingCompanyId: "",
+    notice: "",
+    sidebarNotice: "",
+    jobsByCompany: {},
+    mobileNavigationOpen: false,
+    qaMessages: yaochiQaMessages(),
+    qaMessagesByCompany: {
+      shanghaiAuto: yaochiQaMessages(),
+      byd_auto: [],
+    },
+  };
+  let bootGeneration = 0;
+  let feishuImportPollToken = 0;
+  const jobPollTokens = new Map();
+
+  function applySafeRecordingData() {
+    goals = [
+      {
+        id: "auto",
+        name: "新能源车企合作跟进",
+        stats: "4 家企业",
+        placeholder: "输入新能源车企、区域或公司关键词",
+        related: ["byd_auto", "futureAuto", "lianhePower"],
+        pool: ["shanghaiAuto", "qichen", "haichuan", "lanche"],
+      },
+      {
+        id: "finance",
+        name: "华东金融机构拓展",
+        stats: "2 家企业",
+        placeholder: "输入金融机构、区域或公司关键词",
+        related: ["donghaiTrust", "yunqiFin"],
+        pool: ["pujiangBank", "haorongSec"],
+      },
+      {
+        id: "manufacturing",
+        name: "制造业智能化升级",
+        stats: "0 家企业",
+        placeholder: "输入制造业、工厂或区域关键词",
+        related: ["mingzhou", "kecheng", "hengyuan"],
+        pool: [],
+      },
+    ];
+
+    companies = {
+      shanghaiAuto: {
+        id: "shanghaiAuto",
+        name: "曜驰智能汽车科技有限公司",
+        initial: "曜",
+        location: "上海市",
+        industry: "新能源汽车",
+        tags: ["新能源汽车", "上海市", "智能座舱"],
+        status: "商务推进",
+        progress: "车主服务与售后数字化机会明确，适合推进小范围PoC。",
+        evidence: "依据：专业数据库、飞书资料、联网搜索",
+        next: "下一步确认试点负责人、知识库范围、数据权限和预算窗口。",
+        updatedAt: "2026-06-29 11:07",
+        updates: [
+          {
+            id: "yaochi-dossier-001",
+            title: "车主服务与售后数字化机会更新",
+            date: "2026-06-29 11:07",
+            bodyParagraphs: [
+              { text: "企业情况：专业数据库显示该企业聚焦新能源整车、智能座舱和售后服务数字化，现阶段销售机会适合从车主服务知识库切入。", citationIds: ["1"] },
+              { text: "近期动态：联网搜索显示其近期在售后运营、用户服务和数据合规方向投入增加，适合验证知识库问答、工单协同和服务助手场景。", citationIds: ["2", "3"] },
+              { text: "销售判断：当前最适合推进小范围PoC，先围绕服务顾问知识检索、门店工单总结和车主问题自动分流做效果验证。", citationIds: ["1", "3"] },
+              { text: "下一步建议：确认试点部门负责人、可接入资料范围、数据权限边界和预算窗口。", citationIds: ["2", "3"] },
+            ],
+            citations: [
+              { id: "1", label: "企业工商数据库", kind: "专业数据库", url: "" },
+              { id: "2", label: "企业风险数据库", kind: "专业数据库", url: "" },
+              { id: "3", label: "官网与公开新闻动态", kind: "联网搜索", url: "" },
+            ],
+          },
+        ],
+        library: [
+          { title: "曜驰智能座舱合作会议纪要", time: "2026-06-14 23:20", sourceType: "会议纪要" },
+          { title: "曜驰客户成功方案云文档", time: "2026-06-12 19:40", sourceType: "云文档" },
+          { title: "曜驰售后服务沟通摘录", time: "2026-06-10 16:30", sourceType: "飞书会话" },
+        ],
+        qaAnswer: "建议先确认三件事：试点范围是否聚焦售后服务知识库，数据权限是否允许进入私有化环境，以及预算窗口是否能覆盖本季度试点。",
+      },
+      qichen: {
+        id: "qichen",
+        name: "云衡智行科技有限公司",
+        initial: "云",
+        location: "广州市",
+        industry: "新能源汽车",
+        tags: ["新能源汽车", "广州市", "智能驾驶"],
+        status: "需求确认中",
+        progress: "历史会议提到数据安全和私有化部署，但暂未确认预算和排期。",
+        evidence: "依据：会议纪要、已有企业档案、公开来源",
+        next: "下一步重点确认预算窗口、数据合规要求和供应商准入流程。",
+        updatedAt: "2026-06-15 18:30",
+        updates: [
+          {
+            id: "yunheng-dossier-001",
+            title: "智能驾驶数据服务需求更新",
+            body: "现有资料显示，对方重点关注私有化部署、数据安全和供应商准入流程，适合先做需求澄清。",
+            type: "公开资料更新",
+            date: "2026-06-15",
+            url: "",
+          },
+        ],
+        library: [
+          { title: "云衡智能驾驶方案讨论记录", time: "2026-06-10 16:45", sourceType: "云文档" },
+          { title: "云衡历史沟通摘录", time: "2026-06-06 11:20", sourceType: "飞书会话" },
+        ],
+        qaAnswer: "历史资料显示，对方重点关注数据安全、私有化部署和供应商准入流程；目前尚未确认预算和排期。",
+      },
+      byd_auto: {
+        id: "byd_auto",
+        name: "星澜新能源科技有限公司",
+        initial: "星",
+        location: "深圳市",
+        industry: "新能源汽车",
+        tags: ["新能源汽车", "深圳市", "动力电池", "智能座舱"],
+        status: "新商机",
+        progress: "新加入目标企业，尚无历史资料，待生成最新档案。",
+        evidence: "依据：专业数据库、公开来源",
+        next: "下一步生成最新档案，并确认对接部门、试点场景和预算窗口。",
+        updatedAt: "2026-06-29 10:30",
+        updates: [],
+        library: [],
+        qaAnswer: "当前企业为新加入目标企业，尚无历史资料；请先生成最新档案后再围绕当前进展提问。",
+      },
+      lanche: { id: "lanche", name: "凌越汽车科技有限公司", initial: "凌", industry: "新能源汽车", location: "杭州市", status: "新商机", progress: "已进入目标企业池，等待获取最近档案和历史沟通资料。", tags: ["新能源汽车", "杭州市", "智能座舱"] },
+      futureAuto: { id: "futureAuto", name: "辰途汽车科技有限公司", initial: "辰", industry: "新能源汽车", location: "杭州市", tags: ["新能源汽车", "杭州市", "智能驾驶"] },
+      lianhePower: { id: "lianhePower", name: "青瓴动力科技有限公司", initial: "青", industry: "动力电池", location: "宁德市", tags: ["动力电池", "新能源产业链", "宁德市"] },
+      haichuan: { id: "haichuan", name: "远舟汽车科技有限公司", initial: "远", industry: "新能源汽车", location: "北京市", status: "初步接触", progress: "已有公开信息和基础企业档案，尚未形成明确采购计划。", tags: ["新能源汽车", "家庭智能车", "北京市"] },
+      pujiangBank: { id: "pujiangBank", name: "浦江数字银行股份有限公司", initial: "浦", industry: "银行", location: "上海市" },
+      haorongSec: { id: "haorongSec", name: "浩融证券股份有限公司", initial: "浩", industry: "证券", location: "北京市" },
+      donghaiTrust: { id: "donghaiTrust", name: "东澜信托有限责任公司", initial: "东", industry: "信托", location: "深圳市" },
+      yunqiFin: { id: "yunqiFin", name: "云启金融科技集团股份有限公司", initial: "云", industry: "金融科技", location: "杭州市" },
+      mingzhou: { id: "mingzhou", name: "明洲精密制造有限公司", initial: "明", industry: "精密制造", location: "宁波" },
+      kecheng: { id: "kecheng", name: "科承工业设备有限公司", initial: "科", industry: "工业设备", location: "苏州" },
+      hengyuan: { id: "hengyuan", name: "恒源智能装备有限公司", initial: "恒", industry: "智能装备", location: "常州" },
+    };
+
+    state.activeGoalId = "auto";
+    state.activeCompanyId = "shanghaiAuto";
+    state.selectedDossierId = "yaochi-dossier-001";
+    state.query = "";
+    state.hasSearched = false;
+    state.materialFilter = "全部";
+    state.targetStatusFilter = "全部";
+    state.qaMessagesByCompany = {
+      shanghaiAuto: yaochiQaMessages(),
+      byd_auto: [],
+    };
+    state.qaMessages = state.qaMessagesByCompany.shanghaiAuto;
+  }
+
+  function localSearchCompanyIds(goal, query) {
+    const normalized = String(query || "").trim().toLowerCase();
+    if (!normalized) return [];
+    return Object.values(companies)
+      .filter((item) => {
+        if (goal.pool.includes(item.id)) return false;
+        return [item.name, item.industry, item.location, ...(item.tags || [])]
+          .join(" ")
+          .toLowerCase()
+          .includes(normalized);
+      })
+      .map((item) => item.id);
+  }
+
+  function refreshSafeCompany(item) {
+    if (!item) return;
+    const isNewTarget = isBydItem(item);
+    const dossier = isNewTarget
+      ? {
+          id: "xinglan-dossier-001",
+          title: "星澜新能源最新销售档案",
+          date: "2026-06-29 11:07",
+          bodyParagraphs: [
+            { text: "企业情况：专业数据库显示该企业属于新能源整车和动力电池产业链重点主体，经营方向覆盖智能座舱、动力电池管理和售后服务数字化。", citationIds: ["1"] },
+            { text: "近期动态：联网搜索显示其正在补充渠道服务、数据安全和用户运营能力，适合作为新增目标企业进入第一轮需求确认。", citationIds: ["2", "3"] },
+            { text: "销售判断：该企业为新加入目标企业，当前未导入飞书会话、会议纪要或云文档资料，不应引用历史资料判断客户意向。", citationIds: ["1"] },
+            { text: "下一步建议：先确认对接部门、试点场景、数据权限边界和预算窗口，再决定是否推进售后知识库或智能客服PoC。", citationIds: ["2", "3"] },
+          ],
+          citations: [
+            { id: "1", label: "企业工商数据库", kind: "专业数据库", url: "" },
+            { id: "2", label: "企业风险数据库", kind: "专业数据库", url: "" },
+            { id: "3", label: "官网与公开新闻动态", kind: "联网搜索", url: "" },
+          ],
+        }
+      : {
+          id: `${item.id}-dossier-${Date.now()}`,
+          title: `${item.name} 最新销售档案`,
+          date: "2026-06-29 11:07",
+          bodyParagraphs: [
+            { text: `企业情况：专业数据库显示${item.name}当前仍聚焦${item.industry}相关业务，适合结合既有历史资料继续推进。`, citationIds: ["1"] },
+            { text: "近期动态：联网搜索显示其近期关注客户服务、运营效率和数据合规，适合围绕知识库问答和流程自动化继续验证。", citationIds: ["2"] },
+            { text: "下一步建议：结合历史沟通记录确认试点负责人、预算窗口和资料接入范围。", citationIds: ["1", "2"] },
+          ],
+          citations: [
+            { id: "1", label: "企业工商数据库", kind: "专业数据库", url: "" },
+            { id: "2", label: "官网与公开新闻动态", kind: "联网搜索", url: "" },
+          ],
+        };
+
+    item.updates = [dossier, ...(item.updates || []).filter((record) => record.id !== dossier.id)];
+    item.updatedAt = dossier.date;
+    if (isNewTarget) {
+      item.status = "需求确认";
+    }
+    item.progress = isNewTarget
+      ? "最新档案已生成，等待需求确认。"
+      : "已更新最新档案，建议结合历史资料推进下一轮商务沟通。";
+    state.selectedDossierId = dossier.id;
+  }
+
+  function answerSafeQuestion(item, question) {
+    const hasMaterials = materialRecords(item).length > 0;
+    const text = hasMaterials
+      ? "基于当前档案和历史资料，下一步建议先确认试点范围、数据权限、预算窗口和技术对接人；这些信息补齐后，可以推进到PoC方案和报价沟通。"
+      : "当前企业为新加入目标企业，尚无历史资料；只能基于最新档案判断。建议先确认对接部门、试点场景、数据权限边界和预算窗口。";
+    return {
+      role: "assistant",
+      text,
+      citations: hasMaterials ? ["历史资料", "企业档案"] : ["最新档案", "专业数据库"],
+    };
+  }
+
+  function prepareConnectedState() {
+    goals = [];
+    companies = {};
+    state.activeGoalId = "";
+    state.activeCompanyId = "";
+    state.selectedDossierId = "";
+    state.qaMessages = [];
+    state.qaMessagesByCompany = {};
+    state.jobsByCompany = {};
+    state.feishuImportOpen = false;
+    state.feishuImportAvailable = null;
+    state.feishuImportTask = null;
+    state.feishuImportError = "";
+  }
+
+  if (DEMO_MODE) applySafeRecordingData();
+  else prepareConnectedState();
+
+  function cookieValue(name) {
+    const prefix = `${name}=`;
+    for (const item of String(document.cookie || "").split(";")) {
+      const trimmed = item.trim();
+      if (!trimmed.startsWith(prefix)) continue;
+      try {
+        return decodeURIComponent(trimmed.slice(prefix.length));
+      } catch {
+        return trimmed.slice(prefix.length);
+      }
+    }
+    return "";
+  }
+
+  async function api(path, options = {}) {
+    const method = options.method || "GET";
+    const headers = { ...(options.headers || {}) };
+    if (options.body) headers["Content-Type"] = "application/json";
+    if (!["GET", "HEAD"].includes(method)) {
+      const csrfToken = cookieValue("siw_csrf");
+      if (csrfToken) headers["X-CSRF-Token"] = csrfToken;
+    }
+    const response = await fetch(`${API_BASE}${path}`, {
+      method,
+      credentials: "same-origin",
+      headers: Object.keys(headers).length ? headers : undefined,
+      body: options.body ? JSON.stringify(options.body) : undefined,
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const error = new Error(payload.error?.message || `请求失败：${response.status}`);
+      error.status = response.status;
+      error.code = payload.error?.code || "api_error";
+      error.details = payload.error?.details || null;
+      error.requestId = payload.meta?.request_id || "";
+      if (response.status === 401 && !options.skipAuthRedirect) {
+        state.auth.checked = true;
+        state.auth.enabled = true;
+        state.auth.authenticated = false;
+        state.auth.user = null;
+        queueMicrotask(render);
+      }
+      throw error;
+    }
+    return payload.data;
+  }
+
+  function goalPlaceholder(goal) {
+    const keyword = (goal.keywords || [])[0] || "行业、区域或公司";
+    return `输入${keyword}关键词`;
+  }
+
+  function mapCompanyFromApi(item) {
+    if (!item) return null;
+    return {
+      id: item.id,
+      name: item.name,
+      initial: item.initial || item.name?.slice(0, 1) || "企",
+      location: item.location || "",
+      industry: item.industry || "企业",
+      tags: item.tags || [item.industry, item.location].filter(Boolean),
+      status: item.status,
+      progress: item.progress,
+      evidence: item.evidence,
+      progressLevel: item.progress_level || progressLevelFromStatus(item.status),
+      updatedAt: formatTime(item.updated_at, item.updatedAt || "尚未更新"),
+      updates: item.updates || [],
+      library: item.library || [],
+      qaAnswer: item.qaAnswer || "",
+    };
+  }
+
+  function mapDossierFromApi(item) {
+    return {
+      id: item.id,
+      title: item.title,
+      body: item.summary || "",
+      bodyParagraphs: (item.body || []).map((paragraph) => ({
+        text: paragraph.text,
+        citationIds: paragraph.citation_ids || [],
+      })),
+      citations: (item.citations || []).map((source) => ({
+        id: source.id,
+        label: source.label,
+        kind: source.source_kind,
+        url: isPlaceholderUrl(source.url) ? "" : source.url || "",
+        summary: source.summary || source.excerpt || "",
+        publishedAt: source.published_at || null,
+        sourceUpdatedAt: source.source_updated_at || null,
+        qualityLabel: source.source_quality_label || "",
+        freshnessLabel: source.freshness_label || "",
+        verificationLabel: source.verification_label || "",
+      })),
+      versionNo: Number(item.version_no || 1),
+      previousDossierId: item.previous_dossier_id || null,
+      changeStatus: item.change_status || "initial",
+      dataAsOf: item.data_as_of ?? null,
+      generatedAt: item.generated_at || item.created_at || null,
+      date: formatTime(item.generated_at || item.created_at, item.date || ""),
+    };
+  }
+
+  function mapMaterialFromApi(item) {
+    return {
+      id: item.id,
+      title: item.title,
+      summary: item.summary || "",
+      time: formatTime(item.updated_at, ""),
+      sourceType: inferMaterialType(item.title, item.source_type),
+    };
+  }
+
+  function mapQaMessage(message) {
+    const citationEntries = (message.citations || [])
+      .map((item) => (typeof item === "string"
+        ? { id: "", label: item }
+        : { id: String(item.id || ""), label: item.label || "" }))
+      .filter((item) => item.label);
+    return {
+      role: message.role,
+      text: message.text,
+      paragraphs: (message.paragraphs || [])
+        .map((paragraph) => ({
+          text: paragraph.text || "",
+          citationIds: (paragraph.citation_ids || paragraph.citationIds || []).map(String),
+        }))
+        .filter((paragraph) => paragraph.text),
+      citations: citationEntries.map((item) => item.label),
+      citationEntries,
+    };
+  }
+
+  function apiErrorMessage(error, fallback) {
+    const message = error?.message || fallback;
+    const requestId = error?.requestId ? `（请求 ${error.requestId}）` : "";
+    return `${message}${requestId}`;
+  }
+
+  function isBydItem(item) {
+    return /byd_auto|星澜/i.test(`${item?.id || ""} ${item?.name || ""}`);
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
+  function splitDisplayParagraphs(value, maxLength = 180) {
+    return splitReadableBlocks(value, maxLength);
+  }
+
+  function formatTime(value, fallback = "") {
+    if (!value) return fallback;
+    const text = String(value);
+    const normalized = text
+      .replace(" ", "T")
+      .replace(/([+-]\d{2})$/, "$1:00");
+    const date = new Date(normalized);
+    if (Number.isNaN(date.getTime())) return fallback || text;
+    return date.toLocaleString("zh-CN", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).replace(/\//g, "-");
+  }
+
+  function wait(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  function dossierJobForCompany(companyId) {
+    return state.jobsByCompany[companyId] || null;
+  }
+
+  function isActiveJob(job) {
+    return ["queued", "running"].includes(String(job?.status || ""));
+  }
+
+  function rememberDossierJob(job, companyId = job?.entity_id) {
+    if (!job?.id || !companyId || job.job_type !== "sales_dossier_generation") return null;
+    state.jobsByCompany[companyId] = job;
+    return job;
+  }
+
+  function makeIdempotencyKey(action, entityId) {
+    const random = window.crypto?.randomUUID?.()
+      || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    return `${action}:${entityId}:${random}`;
+  }
+
+  function dossierRequestStorageKey(companyId) {
+    return `sales-workbench:dossier-request:${companyId}`;
+  }
+
+  function dossierRequestIdempotencyKey(companyId) {
+    const storageKey = dossierRequestStorageKey(companyId);
+    try {
+      const existing = window.sessionStorage.getItem(storageKey);
+      if (existing) return existing;
+      const created = makeIdempotencyKey("dossier", companyId);
+      window.sessionStorage.setItem(storageKey, created);
+      return created;
+    } catch {
+      return makeIdempotencyKey("dossier", companyId);
+    }
+  }
+
+  function clearDossierRequestIdempotencyKey(companyId) {
+    try {
+      window.sessionStorage.removeItem(dossierRequestStorageKey(companyId));
+    } catch {
+      // Storage can be unavailable in hardened browser contexts.
+    }
+  }
+
+  async function loadLatestDossierJob(companyId) {
+    if (DEMO_MODE || !companyId) return null;
+    const jobs = await api(`/jobs?job_type=sales_dossier_generation&entity_id=${encodeURIComponent(companyId)}&limit=1`);
+    const latest = Array.isArray(jobs) ? jobs[0] || null : null;
+    if (latest) {
+      clearDossierRequestIdempotencyKey(companyId);
+      rememberDossierJob(latest, companyId);
+      if (isActiveJob(latest)) monitorDossierJob(latest, companyId);
+    }
+    return latest;
+  }
+
+  function stopJobMonitor(jobId) {
+    const token = jobPollTokens.get(jobId);
+    if (token) token.active = false;
+    jobPollTokens.delete(jobId);
+  }
+
+  function monitorDossierJob(initialJob, companyId) {
+    if (DEMO_MODE || !initialJob?.id || !isActiveJob(initialJob) || jobPollTokens.has(initialJob.id)) return;
+    const token = { active: true };
+    jobPollTokens.set(initialJob.id, token);
+
+    void (async () => {
+      let job = initialJob;
+      let failures = 0;
+      try {
+        while (token.active && isActiveJob(job)) {
+          await wait(1200);
+          if (!token.active) return;
+          try {
+            job = await api(`/jobs/${encodeURIComponent(job.id)}`);
+            failures = 0;
+          } catch (error) {
+            failures += 1;
+            if (failures < 5) continue;
+            if (state.activeCompanyId === companyId) {
+              state.notice = apiErrorMessage(error, "任务仍在后台执行，但暂时无法更新进度。");
+              render();
+            }
+            return;
+          }
+          rememberDossierJob(job, companyId);
+          if (state.activeCompanyId === companyId) render();
+        }
+
+        if (!token.active) return;
+        if (job.status === "succeeded") {
+          await hydrateCompany(companyId, { loadJob: false }).catch(() => null);
+          if (state.activeCompanyId === companyId) {
+            if (job.result?.dossier_id) state.selectedDossierId = job.result.dossier_id;
+            state.notice = job.result?.action === "no_material_change"
+              ? "证据未变化，保留当前版本"
+              : job.result?.version_no
+                ? `已生成档案 V${job.result.version_no}`
+                : "已生成最新档案";
+            render();
+          }
+          return;
+        }
+        if (state.activeCompanyId === companyId) {
+          state.notice = job.status === "cancelled"
+            ? "档案生成任务已取消"
+            : "档案生成失败，可在此重试。";
+          render();
+        }
+      } finally {
+        if (jobPollTokens.get(initialJob.id) === token) jobPollTokens.delete(initialJob.id);
+      }
+    })();
+  }
+
+  function progressLevelFromStatus(status) {
+    const text = String(status || "");
+    if (/签约|成交|已确认|方案|推进/.test(text)) return 78;
+    if (/需求确认/.test(text)) return 58;
+    if (/初步|接触/.test(text)) return 34;
+    if (/暂无|不足/.test(text)) return 12;
+    if (/新商机/.test(text)) return 22;
+    return 42;
+  }
+
+  function salesStatus(status) {
+    const text = String(status || "");
+    if (/签约|成交|归档|已成交/.test(text)) return "成交归档";
+    if (/方案|报价|商务|推进/.test(text)) return "商务推进";
+    if (/需求确认|需求/.test(text)) return "需求确认";
+    if (/初步|接触/.test(text)) return "初步接触";
+    return "新商机";
+  }
+
+  function conciseProgressText(item) {
+    const status = salesStatus(item.status);
+    const text = String(item.progress || "").replace(/\s+/g, " ").trim();
+    if (text && text.length <= 28 && !/最近档案|企业情况|近期动态|销售判断|下一步建议|专业数据库|联网搜索|但|需要/.test(text)) {
+      return text;
+    }
+    const fallback = {
+      新商机: "已加入目标企业池，当前无历史资料，待生成最新档案。",
+      初步接触: "已完成基础信息了解，尚未形成明确采购计划。",
+      需求确认: "已识别数据安全与私有化部署需求，待确认预算和排期。",
+      商务推进: "已进入方案沟通阶段，待确认商务条件和决策流程。",
+      成交归档: "已完成合作归档，后续关注续约和扩展机会。",
+    };
+    return fallback[status] || "当前进度待补充。";
+  }
+
+  function goalStats(count) {
+    return `${Number(count) || 0} 家企业`;
+  }
+
+  function sourceRank(source) {
+    const text = `${source.kind || ""} ${source.label || ""}`;
+    if (/专业数据|专业数据库|工商|招投标/.test(text)) return 0;
+    if (/联网搜索|公开|新闻|公告|媒体|官网/.test(text)) return 1;
+    return 2;
+  }
+
+  function displaySourceKind(kind) {
+    return /专业数据|专业数据库|工商|招投标/.test(String(kind || "")) ? "专业数据库" : kind || "来源";
+  }
+
+  function inferMaterialType(title, explicitType = "") {
+    const explicit = String(explicitType || "").trim();
+    const identity = `${explicit} ${title || ""}`.toLowerCase();
+    if (/feishu_(?:p2p|chat|search)|单聊|群聊|消息|会话|沟通|摘录/.test(identity)) {
+      return "飞书会话";
+    }
+    if (/feishu_doc|云文档|文档|会议|纪要|方案|草案/.test(identity)) {
+      return "云文档";
+    }
+    return "云文档";
+  }
+
+  function normalizeDossierDisplay(sources, paragraphs) {
+    const orderedSources = [...sources]
+      .map((source, index) => ({ ...source, oldId: String(source.id || index + 1) }))
+      .sort((a, b) => sourceRank(a) - sourceRank(b));
+    const idMap = new Map(orderedSources.map((source, index) => [source.oldId, String(index + 1)]));
+    return {
+      sources: orderedSources.map((source, index) => ({
+        ...source,
+        id: String(index + 1),
+        kind: displaySourceKind(source.kind),
+        oldId: undefined,
+      })),
+      paragraphs: paragraphs.map((paragraph) => ({
+        ...paragraph,
+        citationIds: (paragraph.citationIds || [])
+          .map((id) => idMap.get(String(id)) || (DEMO_MODE ? String(id) : null))
+          .filter(Boolean),
+      })),
+    };
+  }
+
+  function materialRecords(item) {
+    if (DEMO_MODE && isBydItem(item)) return [];
+    const records = item.library || [];
+    return records;
+  }
+
+  function historicalDossierRecords(item) {
+    return (item.updates || []).map((dossier) => ({
+      id: dossier.id,
+      title: dossier.title,
+      time: dossier.date,
+      sourceType: "档案",
+      versionNo: dossier.versionNo || 1,
+      isDossier: true,
+    }));
+  }
+
+  async function loadSalesData() {
+    const apiGoals = await api("/sales-goals");
+    const enriched = [];
+    for (const goal of apiGoals) {
+      const targets = await api(`/sales-goals/${encodeURIComponent(goal.id)}/target-enterprises`);
+      targets.forEach((item) => {
+        const mapped = mapCompanyFromApi(item);
+        if (mapped) companies[mapped.id] = { ...(companies[mapped.id] || {}), ...mapped };
+      });
+      enriched.push({
+        id: goal.id,
+        name: goal.name,
+        stats: goalStats(targets.length),
+        placeholder: goalPlaceholder(goal),
+        related: [],
+        pool: targets.map((item) => item.id),
+      });
+    }
+    if (enriched.length) goals = enriched;
+    if (!goals.some((goal) => goal.id === state.activeGoalId)) state.activeGoalId = goals[0]?.id || "";
+    await hydrateVisibleCompany();
+  }
+
+  async function loadGoalCompanies(goalId, query = "") {
+    const goal = goals.find((item) => item.id === goalId);
+    if (!goal) return;
+    const normalizedQuery = query.trim();
+    const [targets, candidates] = await Promise.all([
+      api(`/sales-goals/${encodeURIComponent(goalId)}/target-enterprises`),
+      normalizedQuery
+        ? api(`/sales-goals/${encodeURIComponent(goalId)}/company-search`, { method: "POST", body: { query: normalizedQuery } })
+        : Promise.resolve([]),
+    ]);
+    [...targets, ...candidates].forEach((item) => {
+      const mapped = mapCompanyFromApi(item);
+      if (mapped) companies[mapped.id] = { ...(companies[mapped.id] || {}), ...mapped };
+    });
+    goal.pool = targets.map((item) => item.id);
+    goal.related = candidates.map((item) => item.id);
+    goal.stats = goalStats(goal.pool.length);
+  }
+
+  async function hydrateCompany(companyId, options = {}) {
+    if (!companyId) return null;
+    const detail = await api(`/target-enterprises/${encodeURIComponent(companyId)}`);
+    const mapped = mapCompanyFromApi(detail);
+    if (!mapped) return null;
+    const dossierDetails = await Promise.all((detail.dossiers || []).map((record) =>
+      api(`/dossiers/${encodeURIComponent(record.id)}`).then(mapDossierFromApi).catch(() => mapDossierFromApi(record)),
+    ));
+    mapped.updates = dossierDetails;
+    mapped.library = (detail.materials || []).map(mapMaterialFromApi);
+    mapped.qaAnswer = detail.qa?.messages?.find((message) => message.role === "assistant")?.text || mapped.qaAnswer || "";
+    companies[mapped.id] = { ...(companies[mapped.id] || {}), ...mapped };
+    rememberCompanyQa(mapped.id, (detail.qa?.messages || qaMessagesForCompany(mapped)).map(mapQaMessage));
+    if (state.activeCompanyId === mapped.id
+      && (!state.selectedDossierId || !mapped.updates.some((item) => item.id === state.selectedDossierId))) {
+      state.selectedDossierId = mapped.updates[0]?.id || "";
+    }
+    if (options.loadJob !== false) await loadLatestDossierJob(mapped.id).catch(() => null);
+    return mapped;
+  }
+
+  async function hydrateVisibleCompany() {
+    const current = visibleCompany();
+    if (current?.id) await hydrateCompany(current.id).catch(() => null);
+  }
+
+  function activeGoal() {
+    return goals.find((goal) => goal.id === state.activeGoalId) || goals[0] || {
+      id: "",
+      name: "",
+      stats: "0 家企业",
+      placeholder: "请先创建销售目标",
+      related: [],
+      pool: [],
+    };
+  }
+
+  function company(id) {
+    return companies[id] || null;
+  }
+
+  function visibleCompany() {
+    const goal = activeGoal();
+    if (!goal.pool.includes(state.activeCompanyId)) {
+      state.activeCompanyId = goal.pool[0] || "";
+    }
+    return company(state.activeCompanyId);
+  }
+
+  function qaMessagesForCompany(item) {
+    if (!item?.id) return [];
+    if (!state.qaMessagesByCompany[item.id]) {
+      state.qaMessagesByCompany[item.id] = [];
+    }
+    return state.qaMessagesByCompany[item.id];
+  }
+
+  function rememberCompanyQa(companyId, messages) {
+    if (!companyId) return;
+    state.qaMessagesByCompany[companyId] = messages || [];
+    if (state.activeCompanyId === companyId) {
+      state.qaMessages = state.qaMessagesByCompany[companyId];
+    }
+  }
+
+  function activateCompanyQa(companyId) {
+    const item = company(companyId);
+    state.qaMessages = qaMessagesForCompany(item);
+  }
+
+  function activePool() {
+    return activeGoal().pool
+      .map(company)
+      .filter(Boolean)
+      .filter((item) => state.targetStatusFilter === "全部" || salesStatus(item.status) === state.targetStatusFilter);
+  }
+
+  function relatedCompanies() {
+    const goal = activeGoal();
+    const normalizedQuery = state.query.trim().toLowerCase();
+    return goal.related
+      .map(company)
+      .filter(Boolean)
+      .filter((item) => {
+        if (!normalizedQuery) return true;
+        return [item.name, item.industry, item.location].join(" ").toLowerCase().includes(normalizedQuery);
+      });
+  }
+
+  function render() {
+    if (!DEMO_MODE && state.auth.checked && state.auth.enabled && !state.auth.authenticated) {
+      $("#app").innerHTML = renderAuthScreen();
+      bindAuthEvents();
+      return;
+    }
+    if (!DEMO_MODE && (state.bootLoading || state.bootError)) {
+      $("#app").innerHTML = `
+        <div class="sales-platform">
+          ${renderTopbar()}
+          <main class="connection-state" role="status">
+            <h1>${state.bootLoading ? "正在连接销售工作台" : "销售工作台暂不可用"}</h1>
+            <p>${escapeHtml(state.bootLoading ? "正在读取后端业务数据。" : state.bootError)}</p>
+            ${state.bootError ? `<button class="primary-button connection-retry" id="retryBoot" type="button">重新连接</button>` : ""}
+          </main>
+        </div>
+      `;
+      bindConnectionEvents();
+      return;
+    }
+    const goal = activeGoal();
+    const selected = visibleCompany();
+    $("#app").innerHTML = `
+      <div class="sales-platform">
+        ${renderTopbar()}
+        <main class="sales-layout ${state.mobileNavigationOpen ? "is-mobile-navigation-open" : ""}">
+          ${renderSidebar(goal)}
+          ${renderWorkspace(goal, selected)}
+        </main>
+        ${renderFeishuImportModal(selected)}
+      </div>
+    `;
+    bindEvents();
+  }
+
+  function renderTopbar() {
+    const user = state.auth.user;
+    const displayName = DEMO_MODE ? "yutong04" : user?.display_name || "本地开发者";
+    const avatar = String(displayName || "工").slice(0, 1).toUpperCase();
+    return `
+      <header class="sales-topbar">
+        <div class="brand">
+          <span class="brand-icon">客</span>
+          <strong>${DEMO_MODE ? "南区销售工作台" : "销售智能工作台"}</strong>
+        </div>
+        <div class="topbar-right">
+          ${state.auth.authenticated && !state.bootLoading ? `
+            <button class="mobile-navigation-toggle" id="mobileNavigationToggle" type="button" aria-label="${state.mobileNavigationOpen ? "返回工作区" : "打开企业列表"}" title="${state.mobileNavigationOpen ? "返回工作区" : "打开企业列表"}">
+              <span aria-hidden="true">${state.mobileNavigationOpen ? "×" : "☰"}</span>
+            </button>
+          ` : ""}
+          <span class="user-avatar">${escapeHtml(avatar)}</span>
+          <span class="user-name">${escapeHtml(displayName)}</span>
+          ${!DEMO_MODE && state.auth.enabled ? `<button class="logout-button" id="logoutButton" type="button" aria-label="退出登录" title="退出登录"><span class="logout-label">退出</span><span class="logout-icon" aria-hidden="true">↪</span></button>` : ""}
+        </div>
+      </header>
+    `;
+  }
+
+  function renderAuthScreen() {
+    const bootstrap = state.auth.bootstrapRequired;
+    const view = bootstrap ? "bootstrap" : state.authView;
+    let content = "";
+    if (view === "recover") {
+      content = `
+        <div class="auth-heading">
+          <h1 id="authTitle">找回密码</h1>
+          <p>输入工作区邮箱，我们会发送密码重置链接。</p>
+        </div>
+        <form id="passwordRecoveryForm" class="auth-form">
+          <label>
+            <span>邮箱</span>
+            <input name="email" type="email" autocomplete="email" required placeholder="name@example.com" value="${escapeHtml(state.authPrefillEmail)}" />
+          </label>
+          ${state.authError ? `<p class="auth-error" role="alert">${escapeHtml(state.authError)}</p>` : ""}
+          ${state.authNotice ? `<p class="auth-notice" role="status">${escapeHtml(state.authNotice)}</p>` : ""}
+          <button class="auth-submit" type="submit" ${state.authBusy ? "disabled" : ""}>${state.authBusy ? "正在发送..." : "发送重置邮件"}</button>
+          <button class="auth-link-button" id="backToLogin" type="button">返回登录</button>
+        </form>
+      `;
+    } else if (view === "update") {
+      content = `
+        <div class="auth-heading">
+          <h1 id="authTitle">设置新密码</h1>
+          <p>请输入新的工作区登录密码。</p>
+        </div>
+        <form id="passwordUpdateForm" class="auth-form">
+          <label>
+            <span>新密码</span>
+            <input name="password" type="password" autocomplete="new-password" minlength="10" maxlength="256" required placeholder="至少 10 个字符" />
+          </label>
+          <label>
+            <span>确认新密码</span>
+            <input name="password_confirm" type="password" autocomplete="new-password" minlength="10" maxlength="256" required placeholder="再次输入新密码" />
+          </label>
+          ${state.authError ? `<p class="auth-error" role="alert">${escapeHtml(state.authError)}</p>` : ""}
+          <button class="auth-submit" type="submit" ${state.authBusy ? "disabled" : ""}>${state.authBusy ? "正在保存..." : "保存新密码"}</button>
+          <button class="auth-link-button" id="cancelPasswordUpdate" type="button">返回登录</button>
+        </form>
+      `;
+    } else {
+      content = `
+        <div class="auth-heading">
+          <h1 id="authTitle">${bootstrap ? "创建个人账号" : "登录工作台"}</h1>
+          <p>${bootstrap ? "首次使用需要创建个人登录账号。" : "使用个人账号继续访问销售资料。"}</p>
+        </div>
+        <form id="authForm" class="auth-form">
+          ${bootstrap ? `
+            <label>
+              <span>姓名</span>
+              <input name="display_name" autocomplete="name" maxlength="80" required placeholder="请输入姓名" />
+            </label>
+          ` : ""}
+          <label>
+            <span>邮箱</span>
+            <input name="email" type="email" autocomplete="email" required placeholder="name@example.com" value="${escapeHtml(state.authPrefillEmail)}" />
+          </label>
+          <label>
+            <span>密码</span>
+            <input name="password" type="password" autocomplete="${bootstrap ? "new-password" : "current-password"}" minlength="10" maxlength="256" required placeholder="至少 10 个字符" />
+          </label>
+          ${state.authError ? `<p class="auth-error" role="alert">${escapeHtml(state.authError)}</p>` : ""}
+          ${state.authNotice ? `<p class="auth-notice" role="status">${escapeHtml(state.authNotice)}</p>` : ""}
+          <button class="auth-submit" type="submit" ${state.authBusy ? "disabled" : ""}>
+            ${state.authBusy ? "请稍候..." : bootstrap ? "创建并进入工作台" : "登录"}
+          </button>
+          ${!bootstrap ? `<button class="auth-link-button" id="showPasswordRecovery" type="button">忘记密码</button>` : ""}
+        </form>
+      `;
+    }
+    return `
+      <div class="auth-shell">
+        <header class="auth-brand">
+          <span class="brand-icon">客</span>
+          <strong>销售智能工作台</strong>
+        </header>
+        <main class="auth-main">
+          <section class="auth-panel" aria-labelledby="authTitle">
+            ${content}
+          </section>
+        </main>
+      </div>
+    `;
+  }
+
+  function renderFeishuImportModal(item) {
+    if (!state.feishuImportOpen || !item?.id || DEMO_MODE) return "";
+    const task = state.feishuImportTask;
+    const active = ["queued", "running"].includes(task?.status);
+    const completed = task?.status === "succeeded";
+    const draft = state.feishuImportDraft;
+    const conversation = state.feishuImportKind === "conversation";
+    return `
+      <div class="member-modal-backdrop" id="feishuImportBackdrop">
+        <section class="member-modal feishu-import-modal" role="dialog" aria-modal="true" aria-labelledby="feishuImportTitle">
+          <header class="member-modal-header">
+            <div>
+              <h2 id="feishuImportTitle">导入飞书资料</h2>
+              <p>${escapeHtml(item.name)}</p>
+            </div>
+            <button class="member-modal-close" id="closeFeishuImport" type="button" aria-label="关闭" title="关闭">×</button>
+          </header>
+          <form class="feishu-import-form" id="feishuImportForm">
+            <div class="feishu-import-kind" role="group" aria-label="资料类型">
+              <button class="${conversation ? "is-active" : ""}" data-feishu-kind="conversation" type="button">飞书会话</button>
+              <button class="${!conversation ? "is-active" : ""}" data-feishu-kind="document" type="button">云文档</button>
+            </div>
+            <label>
+              <span>${conversation ? "联系人姓名或会话 ID" : "飞书云文档链接"}</span>
+              <input name="target" value="${escapeHtml(draft.target)}" maxlength="${conversation ? "200" : "1000"}" required
+                ${conversation ? "" : `type="url" inputmode="url"`}
+                placeholder="${conversation ? "输入联系人姓名或 oc_ 开头的会话 ID" : "粘贴完整的飞书云文档或知识库链接"}"
+                ${active || state.feishuImportAvailable === false ? "disabled" : ""} />
+              <small>${conversation
+                ? "单聊可输入联系人姓名；群聊请输入 oc_ 开头的会话 ID。"
+                : "仅支持以 https:// 开头的飞书或 Lark 云文档、知识库链接。"}</small>
+            </label>
+            ${conversation ? `
+              <div class="feishu-import-dates">
+                <label><span>开始时间</span><input name="start" type="datetime-local" value="${escapeHtml(draft.start)}" ${active ? "disabled" : ""} /></label>
+                <label><span>结束时间</span><input name="end" type="datetime-local" value="${escapeHtml(draft.end)}" ${active ? "disabled" : ""} /></label>
+              </div>
+            ` : ""}
+            ${state.feishuImportAvailable === false
+              ? `<p class="feishu-import-status is-error">当前部署未启用飞书资料导入。</p>`
+              : state.feishuImportError
+                ? `<p class="feishu-import-status is-error" role="alert">${escapeHtml(state.feishuImportError)}</p>`
+                : task
+                  ? `<p class="feishu-import-status ${completed ? "is-success" : task.status === "failed" ? "is-error" : ""}" role="status">${escapeHtml(task.error?.message || task.summary || "正在处理")}</p>`
+                  : ""}
+            <div class="feishu-import-actions">
+              <button class="secondary-button" id="cancelFeishuImport" type="button">关闭</button>
+              <button class="primary-button" type="submit" ${active || state.feishuImportAvailable === false ? "disabled" : ""}>
+                ${active ? "导入中" : task?.status === "failed" ? "重新导入" : "开始导入"}
+              </button>
+            </div>
+          </form>
+        </section>
+      </div>
+    `;
+  }
+
+  function renderSidebar(goal) {
+    return `
+      <aside class="sales-sidebar">
+        ${renderPageNotice()}
+        <section class="side-section">
+          <div class="side-heading">
+            <h2>销售目标</h2>
+            <button class="text-action" id="toggleNewGoal" type="button" ${state.busy ? "disabled" : ""}>+ 新增销售目标</button>
+          </div>
+          <div class="goal-list">
+            ${goals.map(renderGoalItem).join("")}
+          </div>
+          ${
+            state.showNewGoal
+              ? `<form class="new-goal" id="newGoalForm">
+                  <input id="newGoalInput" placeholder="输入新的销售目标" />
+                  <button type="submit" ${state.busy === "createGoal" ? "disabled" : ""}>
+                    ${state.busy === "createGoal" ? "创建中" : "创建"}
+                  </button>
+                </form>`
+              : ""
+          }
+        </section>
+
+        <section class="side-section">
+          <h2>查找企业</h2>
+          <form class="company-search" id="companySearch">
+            <input id="companyQuery" value="${escapeHtml(state.query)}" placeholder="${escapeHtml(goal.placeholder)}" ${state.busy === "search" || !goal.id ? "disabled" : ""} />
+            <button type="submit" ${state.busy === "search" || !goal.id ? "disabled" : ""}>
+              ${state.busy === "search" ? "搜索中" : "搜索"}
+            </button>
+          </form>
+          ${!goal.id ? `<p class="side-tip">先创建销售目标，再查找并加入目标企业。</p>` : ""}
+          ${state.sidebarNotice ? `<p class="side-tip">${escapeHtml(state.sidebarNotice)}</p>` : ""}
+        </section>
+
+        <section class="side-section">
+          <h2>搜索结果</h2>
+          <div class="company-list">
+            ${renderSearchResults()}
+          </div>
+        </section>
+
+        <section class="side-section">
+          <div class="side-heading">
+            <h2>目标企业池</h2>
+          </div>
+          ${renderTargetStatusFilters()}
+          <div class="target-list">
+            ${activePool().length ? activePool().map(renderTargetCompany).join("") : `<div class="empty">暂无目标企业</div>`}
+          </div>
+        </section>
+      </aside>
+    `;
+  }
+
+  function renderPageNotice() {
+    if (state.bootLoading) return `<div class="page-notice">正在加载销售资料...</div>`;
+    if (state.bootError) return `<div class="page-notice is-error">${escapeHtml(state.bootError)}</div>`;
+    return "";
+  }
+
+  function renderSideLoading(text) {
+    return `<div class="side-loading"><span></span>${escapeHtml(text)}</div>`;
+  }
+
+  function renderSearchResults() {
+    if (state.busy === "search") return renderSideLoading("正在查找企业");
+    if (!state.hasSearched) return `<div class="empty">输入关键词搜索后显示企业</div>`;
+    const items = relatedCompanies();
+    return items.length
+      ? items.map(renderRelatedCompany).join("")
+      : `<div class="empty">没有找到匹配企业</div>`;
+  }
+
+  function renderGoalItem(goal) {
+    const active = goal.id === state.activeGoalId;
+    return `
+      <button class="goal-item ${active ? "is-active" : ""}" data-goal="${escapeHtml(goal.id)}" type="button">
+        <span class="dot"></span>
+        <span>
+          <strong>${escapeHtml(goal.name)}</strong>
+          <em>${escapeHtml(goal.stats)}</em>
+        </span>
+      </button>
+    `;
+  }
+
+  function renderTargetStatusFilters() {
+    return `
+      <div class="filter-row target-status-filter" aria-label="目标企业状态筛选">
+        ${TARGET_STATUS_FILTERS.map((status) => `
+          <button class="${state.targetStatusFilter === status ? "is-active" : ""}" data-status-filter="${escapeHtml(status)}" type="button">
+            ${escapeHtml(status)}
+          </button>
+        `).join("")}
+      </div>
+    `;
+  }
+
+  function renderRelatedCompany(item) {
+    const goal = activeGoal();
+    const inPool = goal.pool.includes(item.id);
+    const adding = state.busy === `add:${item.id}`;
+    return `
+      <div class="related-row">
+        <span class="company-token">${escapeHtml(item.initial)}</span>
+        <span class="company-meta">
+          <strong>${escapeHtml(item.name)}</strong>
+          <em>${escapeHtml(item.industry)} · ${escapeHtml(item.location)}</em>
+        </span>
+        <button class="link-action" data-add="${escapeHtml(item.id)}" type="button" ${inPool || adding || state.busy ? "disabled" : ""}>
+          ${adding ? "加入中" : inPool ? "已加入" : "加入目标企业池"}
+        </button>
+      </div>
+    `;
+  }
+
+  function renderTargetCompany(item) {
+    const selected = item.id === state.activeCompanyId;
+    return `
+      <button class="target-row ${selected ? "is-selected" : ""}" data-company="${escapeHtml(item.id)}" type="button">
+        <span class="company-token">${escapeHtml(item.initial)}</span>
+        <span class="company-meta">
+          <strong>${escapeHtml(item.name)}</strong>
+          <span class="mini-progress"><i style="width:${Math.max(8, Math.min(100, Number(item.progressLevel || progressLevelFromStatus(item.status))))}%"></i></span>
+        </span>
+        <span class="status-pill">${escapeHtml(salesStatus(item.status))}</span>
+      </button>
+    `;
+  }
+
+  function renderWorkspace(goal, item) {
+    if (!item) {
+      return `
+        <section class="workspace empty-workspace">
+          <div class="workspace-empty-message">
+            <h1>选择一个目标企业</h1>
+            <p>先在左侧查找公司并加入目标企业池。</p>
+            <button class="primary-button mobile-navigation-empty-action" id="emptyOpenMobileNavigation" type="button">打开企业列表</button>
+          </div>
+        </section>
+      `;
+    }
+
+    return `
+      <section class="workspace">
+        ${renderCompanyHeader(goal, item)}
+        ${renderProgress(item)}
+        ${renderRecentDossier(item)}
+        ${renderSupportArea(item)}
+      </section>
+    `;
+  }
+
+  function renderCompanyHeader(goal, item) {
+    const job = dossierJobForCompany(item.id);
+    const activeJob = isActiveJob(job);
+    return `
+      <div class="company-header">
+        <div class="company-title">
+          <span class="company-logo">${escapeHtml(item.initial)}</span>
+          <div>
+            <h1>${escapeHtml(item.name)}</h1>
+            <p>目标企业 · ${escapeHtml(goal.name)}</p>
+            <div class="chip-row">
+              ${(item.tags || [item.industry, item.location]).map((tag) => `<span>${escapeHtml(tag)}</span>`).join("")}
+            </div>
+          </div>
+        </div>
+        <div class="header-actions">
+          <button class="primary-button" id="refreshCompany" type="button" ${state.busy || activeJob ? "disabled" : ""}>
+            ${state.busy === "refresh" ? "正在提交" : activeJob ? escapeHtml(job.stage_label || "正在生成档案") : "获取最新档案"}
+          </button>
+          ${renderDossierJobStatus(job)}
+          <em class="${state.notice ? "is-notice" : ""}">${state.notice ? escapeHtml(state.notice) : `更新于：${escapeHtml(item.updatedAt || "尚未更新")}`}</em>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderDossierJobStatus(job) {
+    if (!job || job.status === "succeeded") return "";
+    const active = isActiveJob(job);
+    const progress = Math.max(0, Math.min(100, Number(job.progress || 0)));
+    const retry = !active && job.retryable
+      ? `<button class="job-inline-action" data-retry-dossier-job="${escapeHtml(job.id)}" type="button">重试</button>`
+      : "";
+    const cancel = active && job.stage !== "cancelling"
+      ? `<button class="job-inline-action" data-cancel-dossier-job="${escapeHtml(job.id)}" type="button">取消</button>`
+      : "";
+    return `
+      <div class="dossier-job-status ${active ? "is-active" : "is-terminal"}" role="status" aria-live="polite">
+        <div class="dossier-job-heading">
+          <span>${escapeHtml(job.stage_label || (active ? "正在处理" : "任务未完成"))}</span>
+          <span class="dossier-job-controls">
+            ${active ? `<strong>${progress}%</strong>` : ""}
+            ${cancel}${retry}
+          </span>
+        </div>
+        ${active ? `<span class="dossier-job-progress" aria-hidden="true"><i style="width:${progress}%"></i></span>` : ""}
+      </div>
+    `;
+  }
+
+  function renderProgress(item) {
+    return `
+      <div class="progress-card">
+        <div>
+          <h2>当前进度</h2>
+          <span class="progress-status">${escapeHtml(salesStatus(item.status))}</span>
+        </div>
+        <p>${escapeHtml(conciseProgressText(item))}</p>
+      </div>
+    `;
+  }
+
+  function renderRecentDossier(item) {
+    const updates = item.updates || [];
+    const selected = selectedDossier(updates);
+    return `
+      <section class="recent-section">
+        <div class="section-title">
+          <h2>最近档案</h2>
+          ${updates.length ? `
+            <div class="version-tabs" aria-label="档案版本">
+              ${updates.map((update, index) => `
+                <button class="${update.id === selected?.id ? "is-active" : ""}" data-dossier="${escapeHtml(update.id)}" type="button">
+                  V${escapeHtml(update.versionNo || Math.max(1, updates.length - index))}
+                </button>
+              `).join("")}
+            </div>
+          ` : ""}
+        </div>
+        ${selected ? renderDossierDetail(selected) : `<div class="empty large">暂无最近档案。</div>`}
+      </section>
+    `;
+  }
+
+  function renderSupportArea(item) {
+    return `
+      <section class="support-grid">
+        ${renderLibrary(item)}
+        ${renderQa(item)}
+      </section>
+    `;
+  }
+
+  function selectedDossier(updates) {
+    if (!updates.length) return null;
+    return updates.find((update) => update.id === state.selectedDossierId) || updates[0];
+  }
+
+  function dossierSources(update) {
+    if (!update) return [];
+    if (update.citations?.length) return update.citations;
+    if (!DEMO_MODE) return [];
+    return [
+      {
+        id: 1,
+        label: "企业工商数据库",
+        kind: "专业数据库",
+        url: "",
+      },
+      {
+        id: 2,
+        label: update.type,
+        kind: "联网搜索",
+        url: isPlaceholderUrl(update.url) ? "" : update.url,
+      },
+    ];
+  }
+
+  function renderDossierDetail(update) {
+    if (!update) return "";
+    const sources = dossierSources(update);
+    const rawParagraphs = update.bodyParagraphs?.length
+      ? update.bodyParagraphs
+      : update.body
+        ? [{ text: update.body, citationIds: [] }]
+        : DEMO_MODE ? [
+          { text: update.body, citationIds: ["1"] },
+          { text: "结合公开信息判断，这条记录更适合用于下一轮销售沟通前的背景准备，重点确认预算、排期、供应商准入和数据合规要求。", citationIds: ["2"] },
+        ] : [];
+    const { sources: orderedSources, paragraphs } = normalizeDossierDisplay(sources, rawParagraphs);
+    return `
+      <article class="dossier-detail">
+        <div class="detail-head">
+          <span>档案详情 · V${escapeHtml(update.versionNo || 1)}</span>
+          <span class="detail-meta">
+            <em>${escapeHtml(update.date)}</em>
+          </span>
+        </div>
+        <h2>${escapeHtml(update.title)}</h2>
+        <p class="dossier-timing">资料截至 ${escapeHtml(formatTime(update.dataAsOf, "未知"))} · 生成于 ${escapeHtml(formatTime(update.generatedAt, update.date || "未知"))}</p>
+        <div class="dossier-body">
+          ${paragraphs.length ? paragraphs.map(renderDossierParagraph).join("") : `<div class="inline-empty">档案正文暂未加载，请稍后重新打开该企业。</div>`}
+        </div>
+        <div class="citation-block">
+          <strong>引用来源</strong>
+          ${orderedSources.length ? orderedSources.map(renderCitation).join("") : `<span class="citation-plain">暂无可验证的引用来源。</span>`}
+        </div>
+      </article>
+    `;
+  }
+
+  function renderDossierParagraph(paragraph) {
+    const raw = String(paragraph.text || "");
+    const sectionMatch = raw.match(/^([^：:\n]{1,24})[：:]\s*([\s\S]*)$/);
+    const heading = normalizeChineseTypography(sectionMatch?.[1] || "");
+    const content = sectionMatch?.[2] || raw;
+    const citations = (paragraph.citationIds || []).map((id) => `<sup>[${escapeHtml(id)}]</sup>`).join("");
+    const displayParagraphs = splitDisplayParagraphs(content);
+    const paragraphHtml = displayParagraphs.map((text, index) => {
+      const references = index === displayParagraphs.length - 1 && citations ? ` ${citations}` : "";
+      return `<p>${escapeHtml(text)}${references}</p>`;
+    }).join("");
+    if (DOSSIER_SECTION_TITLES.includes(heading)) {
+      return `
+        <section class="dossier-report-section">
+          <h3>${escapeHtml(heading)}</h3>
+          <div class="dossier-report-content">
+            ${paragraphHtml}
+          </div>
+        </section>
+      `;
+    }
+    return paragraphHtml;
+  }
+
+  function renderCitation(source) {
+    const label = `[${source.id}] ${displaySourceKind(source.kind)}：${source.label}`;
+    const sourceTime = formatTime(source.sourceUpdatedAt || source.publishedAt, "");
+    const hasDetail = Boolean(source.summary || sourceTime || source.qualityLabel || source.freshnessLabel || source.verificationLabel || source.url);
+    if (!hasDetail) return `<span class="citation-plain">${escapeHtml(label)}</span>`;
+    return `
+      <details class="citation-item">
+        <summary>${escapeHtml(label)}</summary>
+        <div>
+          ${source.summary ? `<p>${escapeHtml(source.summary)}</p>` : ""}
+          <p class="citation-meta">
+            ${sourceTime ? `<span>来源时间：${escapeHtml(sourceTime)}</span>` : ""}
+            ${source.qualityLabel ? `<span>${escapeHtml(source.qualityLabel)}</span>` : ""}
+            ${source.freshnessLabel ? `<span>${escapeHtml(source.freshnessLabel)}</span>` : ""}
+            ${source.verificationLabel ? `<span>${escapeHtml(source.verificationLabel)}</span>` : ""}
+          </p>
+          ${source.url && !isPlaceholderUrl(source.url) ? `<a href="${escapeHtml(source.url)}" target="_blank" rel="noreferrer">打开原始来源 ↗</a>` : ""}
+        </div>
+      </details>
+    `;
+  }
+
+  function renderLibrary(item) {
+    const materialRows = materialRecords(item);
+    const dossierRows = historicalDossierRecords(item);
+    const allRecords = [...dossierRows, ...materialRows];
+    const records = allRecords.filter((record) => {
+      if (state.materialFilter === "全部") return true;
+      if (state.materialFilter === "档案") return record.isDossier;
+      if (record.isDossier) return false;
+      return inferMaterialType(record.title, record.sourceType).includes(state.materialFilter);
+    });
+    return `
+      <section class="library-panel">
+        <div class="support-heading">
+          <h2>历史资料 <span>${allRecords.length}</span></h2>
+          <div class="library-tools">
+            ${!DEMO_MODE ? `<button class="secondary-button library-import-button" id="openFeishuImport" type="button" ${state.busy ? "disabled" : ""}>导入飞书资料</button>` : ""}
+            <div class="filter-row material-filter" aria-label="历史资料筛选">
+              ${MATERIAL_FILTERS.map((type) => `
+                <button class="${state.materialFilter === type ? "is-active" : ""}" data-material-filter="${escapeHtml(type)}" type="button">
+                  ${escapeHtml(type)}
+                </button>
+              `).join("")}
+            </div>
+          </div>
+        </div>
+        ${
+          records.length
+            ? `<div class="library-table">
+                <div class="library-head"><span>资料名称</span><span>来源</span><span>更新时间</span></div>
+                ${records.map((record) => `
+                  <div class="library-row">
+                    ${record.isDossier
+                      ? `<button class="library-dossier-link" data-dossier="${escapeHtml(record.id)}" type="button">${escapeHtml(record.title)}</button>`
+                      : `<strong>${escapeHtml(record.title)}</strong>`}
+                    <span>${record.isDossier ? `档案 V${escapeHtml(record.versionNo)}` : escapeHtml(inferMaterialType(record.title, record.sourceType))}</span>
+                    <span>${escapeHtml(record.time)}</span>
+                  </div>
+                `).join("")}
+              </div>`
+            : `<div class="empty large">${state.materialFilter === "档案" ? "暂无历史档案。" : "暂无历史资料。"}</div>`
+        }
+      </section>
+    `;
+  }
+
+  function renderQa(item) {
+    const hasMaterials = materialRecords(item).length > 0;
+    const messages = qaMessagesForCompany(item);
+    const qaNote = hasMaterials
+      ? "仅根据当前企业档案和用户导入的飞书资料回答。"
+      : "当前企业暂无飞书资料；问答仅根据当前企业档案回答。";
+    const qaPlaceholder = hasMaterials ? "询问历史沟通、当前进展或资料缺口" : "询问当前进展或资料缺口";
+    return `
+      <section class="qa-panel">
+        <div class="support-heading">
+          <h2>资料问答</h2>
+        </div>
+        <p class="qa-note">${escapeHtml(qaNote)}</p>
+        <div class="chat-area" aria-live="polite">
+          ${messages.length ? messages.map(renderMessage).join("") : `<div class="empty large">暂无历史问答。</div>`}
+          ${state.busy === "qa" && state.qaPendingCompanyId === item.id
+            ? `<article class="chat-message assistant is-pending" role="status"><span>正在检索档案与飞书资料</span></article>`
+            : ""}
+        </div>
+        <form class="qa-input" id="qaForm">
+          <input id="qaQuestion" placeholder="${escapeHtml(qaPlaceholder)}" ${state.busy === "qa" ? "disabled" : ""} />
+          <button type="submit" ${state.busy === "qa" ? "disabled" : ""}>
+            ${state.busy === "qa" ? "发送中" : "发送"}
+          </button>
+        </form>
+      </section>
+    `;
+  }
+
+  function renderMessage(message) {
+    const rawCitationEntries = message.citationEntries?.length
+      ? message.citationEntries
+      : (message.citations || []).map((label) => ({ id: "", label }));
+    const citationDisplay = dedupeCitationEntries(rawCitationEntries);
+    const citationEntries = citationDisplay.entries;
+    const citationNumbers = new Map(Object.entries(citationDisplay.citationNumbers));
+    const paragraphs = collapseRepeatedCitationRuns(qaAnswerParagraphs(message));
+    return `
+      <article class="chat-message ${message.role}">
+        ${message.role === "assistant"
+          ? `<div class="qa-answer-body">${paragraphs.map((paragraph) => renderQaAnswerParagraph(paragraph, citationNumbers)).join("")}</div>`
+          : `<p>${escapeHtml(message.text)}</p>`}
+        ${citationEntries.length
+          ? `<div class="citation-row">${citationEntries.map((item, index) => `<span><b>[${index + 1}]</b>${escapeHtml(item.label)}</span>`).join("")}</div>`
+          : ""}
+      </article>
+    `;
+  }
+
+  function qaAnswerParagraphs(message) {
+    const source = message.paragraphs?.length
+      ? message.paragraphs
+      : [{ text: message.text || "", citationIds: [] }];
+    return source.flatMap((paragraph, citationGroup) => splitQaAnswerText(paragraph.text).map((text) => ({
+      text,
+      citationIds: paragraph.citationIds || [],
+      citationGroup,
+    })));
+  }
+
+  function splitQaAnswerText(value) {
+    const normalized = normalizeChineseTypography(value);
+    if (!normalized) return [];
+    const afterSentence = new RegExp(`([。；！？])\\s*(?=(?:${QA_SECTION_HEADING_SOURCE})[：:])`, "g");
+    const afterWhitespace = new RegExp(`[ \\t\\n]+(?=(?:${QA_SECTION_HEADING_SOURCE})[：:])`, "g");
+    const structured = normalized
+      .replace(afterSentence, "$1\n\n")
+      .replace(afterWhitespace, "\n\n");
+    return splitReadableBlocks(structured, 220);
+  }
+
+  function renderQaAnswerParagraph(paragraph, citationNumbers) {
+    const match = paragraph.text.match(QA_SECTION_HEADING_PATTERN);
+    const heading = match?.[1] || "";
+    const body = match?.[2] || paragraph.text;
+    const references = [...new Set(
+      (paragraph.displayCitationIds || [])
+        .map((id) => citationNumbers.get(String(id)))
+        .filter(Boolean),
+    )];
+    return `
+      <section class="qa-answer-paragraph">
+        ${heading ? `<h3>${escapeHtml(heading)}</h3>` : ""}
+        <p>${escapeHtml(body).replace(/\n/g, "<br>")}${references.length ? `<span class="qa-citation-anchor">&#8288;<sup class="qa-answer-refs">${references.map((number) => `<span>[${number}]</span>`).join("")}</sup></span>` : ""}</p>
+      </section>
+    `;
+  }
+
+  function scrollQaToBottom() {
+    queueMicrotask(() => {
+      const chatArea = $(".chat-area");
+      if (chatArea) chatArea.scrollTop = chatArea.scrollHeight;
+    });
+  }
+
+  function bindConnectionEvents() {
+    $("#retryBoot")?.addEventListener("click", () => {
+      if (state.bootLoading) return;
+      boot();
+    });
+  }
+
+  function bindAuthEvents() {
+    const showAuthView = (view) => {
+      state.authView = view;
+      state.authBusy = "";
+      state.authError = "";
+      state.authNotice = "";
+      render();
+    };
+    $("#showPasswordRecovery")?.addEventListener("click", () => showAuthView("recover"));
+    $("#backToLogin")?.addEventListener("click", () => showAuthView("login"));
+    $("#cancelPasswordUpdate")?.addEventListener("click", () => {
+      recoveryAccessToken = "";
+      showAuthView("login");
+    });
+    $("#passwordRecoveryForm")?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (state.authBusy) return;
+      const form = new FormData(event.currentTarget);
+      state.authPrefillEmail = String(form.get("email") || "").trim();
+      state.authBusy = "recover";
+      state.authError = "";
+      state.authNotice = "";
+      render();
+      try {
+        await api("/auth/password/recover", {
+          method: "POST",
+          body: { email: state.authPrefillEmail },
+          skipAuthRedirect: true,
+        });
+        state.authNotice = "如果该邮箱属于工作区成员，重置邮件已经发送。";
+      } catch (error) {
+        state.authError = apiErrorMessage(error, "暂时无法发送重置邮件，请稍后重试。");
+      } finally {
+        state.authBusy = "";
+        render();
+      }
+    });
+    $("#passwordUpdateForm")?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (state.authBusy) return;
+      const form = new FormData(event.currentTarget);
+      const password = String(form.get("password") || "");
+      const confirmation = String(form.get("password_confirm") || "");
+      if (password !== confirmation) {
+        state.authError = "两次输入的密码不一致。";
+        render();
+        return;
+      }
+      if (!recoveryAccessToken) {
+        state.authError = "密码重置链接无效或已经过期。";
+        render();
+        return;
+      }
+      state.authBusy = "update";
+      state.authError = "";
+      render();
+      try {
+        const result = await api("/auth/password/update", {
+          method: "POST",
+          body: { password },
+          headers: { Authorization: `Bearer ${recoveryAccessToken}` },
+          skipAuthRedirect: true,
+        });
+        recoveryAccessToken = "";
+        state.authPrefillEmail = result.email || "";
+        state.authView = "login";
+        state.authNotice = "密码已设置，请使用新密码登录。";
+      } catch (error) {
+        state.authError = apiErrorMessage(error, "密码设置失败，请重新申请链接。");
+      } finally {
+        state.authBusy = "";
+        render();
+      }
+    });
+    $("#authForm")?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (state.authBusy) return;
+      const form = new FormData(event.currentTarget);
+      const bootstrap = state.auth.bootstrapRequired;
+      const body = {
+        email: String(form.get("email") || "").trim(),
+        password: String(form.get("password") || ""),
+        ...(bootstrap ? { display_name: String(form.get("display_name") || "").trim() } : {}),
+      };
+      state.authBusy = bootstrap ? "bootstrap" : "login";
+      state.authError = "";
+      state.authNotice = "";
+      render();
+      try {
+        const result = await api(bootstrap ? "/auth/bootstrap" : "/auth/login", {
+          method: "POST",
+          body,
+          skipAuthRedirect: true,
+        });
+        state.auth.checked = true;
+        state.auth.enabled = true;
+        state.auth.authenticated = true;
+        state.auth.bootstrapRequired = false;
+        state.auth.user = result.user || null;
+        state.authBusy = "";
+        await boot();
+      } catch (error) {
+        state.authBusy = "";
+        state.authError = apiErrorMessage(error, bootstrap ? "管理员创建失败，请重试。" : "登录失败，请检查邮箱和密码。");
+        render();
+      }
+    });
+  }
+
+  function closeFeishuImport() {
+    state.feishuImportOpen = false;
+    state.feishuImportError = "";
+    render();
+  }
+
+  async function monitorFeishuImport(initialTask, companyId) {
+    const token = ++feishuImportPollToken;
+    let task = initialTask;
+    try {
+      while (token === feishuImportPollToken && ["queued", "running"].includes(task?.status)) {
+        await wait(900);
+        if (token !== feishuImportPollToken) return;
+        task = await api(`/target-enterprises/${encodeURIComponent(companyId)}/materials/feishu-import/${encodeURIComponent(task.id)}`);
+        state.feishuImportTask = task;
+        render();
+      }
+      if (token !== feishuImportPollToken || !task) return;
+      if (task.status === "succeeded") {
+        await hydrateCompany(companyId, { loadJob: false });
+        state.notice = "飞书资料已导入";
+        state.materialFilter = task.source_kind === "document" ? "云文档" : "飞书会话";
+      } else {
+        state.feishuImportError = task.error?.message || "飞书资料导入失败。";
+      }
+    } catch (error) {
+      if (token !== feishuImportPollToken) return;
+      state.feishuImportError = apiErrorMessage(error, "暂时无法获取飞书资料导入进度。");
+    }
+    render();
+  }
+
+  function bindEvents() {
+    const setMobileNavigation = (open) => {
+      state.mobileNavigationOpen = Boolean(open);
+      render();
+    };
+    $("#mobileNavigationToggle")?.addEventListener("click", () => {
+      setMobileNavigation(!state.mobileNavigationOpen);
+    });
+    $("#emptyOpenMobileNavigation")?.addEventListener("click", () => {
+      setMobileNavigation(true);
+    });
+    $("#openFeishuImport")?.addEventListener("click", async () => {
+      const current = visibleCompany();
+      if (!current?.id) return;
+      state.feishuImportOpen = true;
+      state.feishuImportAvailable = null;
+      state.feishuImportError = "";
+      if (!["queued", "running"].includes(state.feishuImportTask?.status)) {
+        state.feishuImportTask = null;
+      }
+      render();
+      try {
+        const status = await api("/feishu-import/status");
+        state.feishuImportAvailable = Boolean(status.available);
+      } catch (error) {
+        state.feishuImportAvailable = false;
+        state.feishuImportError = apiErrorMessage(error, "暂时无法确认飞书资料导入状态。");
+      }
+      render();
+    });
+    $("#closeFeishuImport")?.addEventListener("click", closeFeishuImport);
+    $("#cancelFeishuImport")?.addEventListener("click", closeFeishuImport);
+    $("#feishuImportBackdrop")?.addEventListener("click", (event) => {
+      if (event.target.id === "feishuImportBackdrop") closeFeishuImport();
+    });
+    $$("[data-feishu-kind]").forEach((button) => {
+      button.addEventListener("click", () => {
+        if (["queued", "running"].includes(state.feishuImportTask?.status)) return;
+        state.feishuImportKind = button.dataset.feishuKind;
+        state.feishuImportDraft = { target: "", start: "", end: "" };
+        state.feishuImportTask = null;
+        state.feishuImportError = "";
+        render();
+      });
+    });
+    $("#feishuImportForm")?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const current = visibleCompany();
+      if (!current?.id || ["queued", "running"].includes(state.feishuImportTask?.status)) return;
+      const form = new FormData(event.currentTarget);
+      state.feishuImportDraft = {
+        target: String(form.get("target") || "").trim(),
+        start: String(form.get("start") || ""),
+        end: String(form.get("end") || ""),
+      };
+      state.feishuImportError = "";
+      if (state.feishuImportKind === "conversation"
+        && /^ou_[A-Za-z0-9_-]+$/i.test(state.feishuImportDraft.target)) {
+        state.feishuImportError = "飞书会话请填写联系人姓名或 oc_ 开头的会话 ID，不支持 Open ID。";
+        render();
+        return;
+      }
+      if (state.feishuImportKind === "document"
+        && !/^https:\/\/\S+$/i.test(state.feishuImportDraft.target)) {
+        state.feishuImportError = "请粘贴完整的 https:// 飞书云文档链接。";
+        render();
+        return;
+      }
+      state.feishuImportTask = {
+        status: "queued",
+        summary: "正在创建导入任务。",
+        source_kind: state.feishuImportKind,
+      };
+      render();
+      try {
+        const task = await api(`/target-enterprises/${encodeURIComponent(current.id)}/materials/feishu-import`, {
+          method: "POST",
+          body: {
+            source_kind: state.feishuImportKind,
+            target: state.feishuImportDraft.target,
+            start: state.feishuImportDraft.start,
+            end: state.feishuImportDraft.end,
+          },
+        });
+        state.feishuImportTask = task;
+        render();
+        monitorFeishuImport(task, current.id);
+      } catch (error) {
+        state.feishuImportTask = null;
+        state.feishuImportError = apiErrorMessage(error, "飞书资料导入任务创建失败。");
+        render();
+      }
+    });
+    $("#logoutButton")?.addEventListener("click", async () => {
+      if (state.authBusy) return;
+      state.authBusy = "logout";
+      try {
+        await api("/auth/logout", { method: "POST", skipAuthRedirect: true });
+      } catch {
+        // Local session is cleared by the server whenever it can be reached.
+      }
+      prepareConnectedState();
+      state.auth = {
+        checked: true,
+        enabled: true,
+        authenticated: false,
+        bootstrapRequired: false,
+        user: null,
+      };
+      state.authBusy = "";
+      state.authError = "";
+      state.authNotice = "";
+      state.authView = "login";
+      render();
+    });
+    $("#toggleNewGoal")?.addEventListener("click", () => {
+      if (state.busy) return;
+      state.showNewGoal = !state.showNewGoal;
+      render();
+    });
+
+    $("#newGoalForm")?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (state.busy) return;
+      const name = $("#newGoalInput").value.trim();
+      if (!name) return;
+      state.busy = "createGoal";
+      state.notice = "";
+      state.sidebarNotice = "";
+      render();
+      if (DEMO_MODE) {
+        const id = `goal-${Date.now()}`;
+        goals.unshift({
+          id,
+          name,
+          stats: goalStats(0),
+          placeholder: `输入${name}相关企业关键词`,
+          related: [],
+          pool: [],
+        });
+        state.activeGoalId = id;
+        state.activeCompanyId = "";
+        state.showNewGoal = false;
+        state.notice = "已新增销售目标";
+        state.busy = "";
+        render();
+        return;
+      }
+      try {
+        const created = await api("/sales-goals", { method: "POST", body: { name } });
+        goals.unshift({
+          id: created.id,
+          name: created.name,
+          stats: goalStats(0),
+          placeholder: goalPlaceholder(created),
+          related: [],
+          pool: [],
+        });
+        state.activeGoalId = created.id;
+        state.activeCompanyId = "";
+        state.showNewGoal = false;
+        state.notice = "已新增销售目标";
+      } catch {
+        state.showNewGoal = false;
+        state.sidebarNotice = "暂时没能创建销售目标，请稍后再试。";
+      } finally {
+        state.busy = "";
+      }
+      render();
+    });
+
+    $$("[data-goal]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        if (state.busy) return;
+        state.activeGoalId = button.dataset.goal;
+        state.activeCompanyId = "";
+        state.targetStatusFilter = "全部";
+        state.materialFilter = "全部";
+        state.query = "";
+        state.hasSearched = false;
+        state.notice = "";
+        state.sidebarNotice = "";
+        state.busy = `goal:${state.activeGoalId}`;
+        render();
+        if (DEMO_MODE) {
+          state.busy = "";
+          render();
+          return;
+        }
+        try {
+          await loadGoalCompanies(state.activeGoalId);
+          await hydrateVisibleCompany();
+        } catch {
+          state.sidebarNotice = "暂时没能加载这个销售目标，请稍后再试。";
+        } finally {
+          state.busy = "";
+        }
+        render();
+      });
+    });
+
+    $("#companySearch")?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (state.busy) return;
+      state.query = $("#companyQuery").value.trim();
+      state.hasSearched = Boolean(state.query);
+      if (!state.query) {
+        const goal = activeGoal();
+        goal.related = [];
+        state.sidebarNotice = "请输入行业、区域或企业关键词后搜索。";
+        render();
+        return;
+      }
+      state.busy = "search";
+      state.sidebarNotice = "";
+      state.notice = "";
+      render();
+      if (DEMO_MODE) {
+        const goal = activeGoal();
+        goal.related = localSearchCompanyIds(goal, state.query);
+        state.sidebarNotice = goal.related.length ? "已更新相关公司" : "没有找到匹配企业，可以换个关键词再试。";
+        state.busy = "";
+        render();
+        return;
+      }
+      try {
+        await loadGoalCompanies(state.activeGoalId, state.query);
+        state.sidebarNotice = state.query ? "已更新相关公司" : "";
+      } catch {
+        state.sidebarNotice = "暂时没能查到相关公司，可以换个关键词再试。";
+      } finally {
+        state.busy = "";
+      }
+      render();
+    });
+
+    $$("[data-add]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        if (state.busy) return;
+        const goal = activeGoal();
+        const id = button.dataset.add;
+        state.busy = `add:${id}`;
+        state.sidebarNotice = "";
+        state.notice = "";
+        render();
+        if (DEMO_MODE) {
+          if (!goal.pool.includes(id)) goal.pool.push(id);
+          goal.related = goal.related.filter((itemId) => itemId !== id);
+        state.activeCompanyId = id;
+        state.mobileNavigationOpen = false;
+          if (isBydItem(companies[id])) {
+            companies[id].library = [];
+            companies[id].updates = [];
+            companies[id].status = "新商机";
+            companies[id].progress = "新加入目标企业，尚无历史资料。";
+            rememberCompanyQa(id, []);
+            state.selectedDossierId = "";
+            state.materialFilter = "全部";
+          }
+          state.query = "";
+          state.hasSearched = false;
+          state.notice = "已加入目标企业池";
+          goal.stats = goalStats(goal.pool.length);
+          state.busy = "";
+          render();
+          return;
+        }
+        try {
+          const detail = await api(`/sales-goals/${encodeURIComponent(goal.id)}/target-enterprises`, { method: "POST", body: { company_id: id } });
+          const mapped = mapCompanyFromApi(detail);
+          if (mapped) companies[mapped.id] = { ...(companies[mapped.id] || {}), ...mapped };
+          if (!goal.pool.includes(id)) goal.pool.push(id);
+          goal.stats = goalStats(goal.pool.length);
+          state.activeCompanyId = id;
+          state.mobileNavigationOpen = false;
+          await hydrateCompany(id);
+          state.notice = "已加入目标企业池";
+        } catch {
+          state.sidebarNotice = "暂时没能加入目标企业池，请稍后再试。";
+        } finally {
+          state.busy = "";
+        }
+        render();
+      });
+    });
+
+    $$("[data-company]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        if (state.busy) return;
+        state.activeCompanyId = button.dataset.company;
+        state.mobileNavigationOpen = false;
+        state.materialFilter = "全部";
+        if (DEMO_MODE && isBydItem(company(state.activeCompanyId))) {
+          company(state.activeCompanyId).library = [];
+        }
+        activateCompanyQa(state.activeCompanyId);
+        state.selectedDossierId = company(state.activeCompanyId)?.updates?.[0]?.id || "";
+        state.notice = "";
+        state.sidebarNotice = "";
+        state.busy = `company:${state.activeCompanyId}`;
+        render();
+        if (DEMO_MODE) {
+          state.busy = "";
+          render();
+          return;
+        }
+        try {
+          await hydrateCompany(state.activeCompanyId);
+        } catch {
+          state.notice = "暂时没能刷新企业资料，已保留当前档案。";
+        } finally {
+          state.busy = "";
+        }
+        render();
+      });
+    });
+
+    $$('[data-dossier]').forEach((button) => {
+      button.addEventListener("click", () => {
+        if (state.busy) return;
+        state.selectedDossierId = button.dataset.dossier;
+        render();
+      });
+    });
+
+    $$("[data-status-filter]").forEach((button) => {
+      button.addEventListener("click", () => {
+        if (state.busy) return;
+        state.targetStatusFilter = button.dataset.statusFilter;
+        const pool = activePool();
+        if (pool.length && !pool.some((item) => item.id === state.activeCompanyId)) {
+          state.activeCompanyId = pool[0].id;
+          state.selectedDossierId = company(state.activeCompanyId)?.updates?.[0]?.id || "";
+        }
+        render();
+      });
+    });
+
+    $$("[data-material-filter]").forEach((button) => {
+      button.addEventListener("click", () => {
+        if (state.busy) return;
+        state.materialFilter = button.dataset.materialFilter;
+        render();
+      });
+    });
+
+    $("#refreshCompany")?.addEventListener("click", async () => {
+      if (state.busy) return;
+      const current = visibleCompany();
+      if (isActiveJob(dossierJobForCompany(current?.id))) return;
+      state.busy = "refresh";
+      state.notice = "";
+      render();
+      if (DEMO_MODE) {
+        refreshSafeCompany(current);
+        state.notice = "已获取最新档案";
+        state.busy = "";
+        render();
+        return;
+      }
+      try {
+        if (current?.id) {
+          const created = await api(`/target-enterprises/${encodeURIComponent(current.id)}/dossiers`, {
+            method: "POST",
+            body: { idempotency_key: dossierRequestIdempotencyKey(current.id) },
+          });
+          clearDossierRequestIdempotencyKey(current.id);
+          if (created?.job_type === "sales_dossier_generation" && created?.id) {
+            rememberDossierJob(created, current.id);
+            state.notice = "任务已提交，可继续浏览其他企业。";
+            state.busy = "";
+            render();
+            monitorDossierJob(created, current.id);
+            return;
+          }
+          state.selectedDossierId = created?.record?.id || created?.detail?.id || state.selectedDossierId;
+          await hydrateCompany(current.id);
+          const version = created?.record?.version_no || created?.detail?.version_no;
+          state.notice = created?.action === "no_material_change"
+            ? "证据未变化，保留当前版本"
+            : version ? `已生成档案 V${version}` : "已生成最新档案";
+        }
+      } catch (error) {
+        state.notice = apiErrorMessage(error, "暂时没能获取最新档案，已保留当前档案。");
+      } finally {
+        state.busy = "";
+        render();
+      }
+    });
+
+    $$('[data-cancel-dossier-job]').forEach((button) => {
+      button.addEventListener("click", async () => {
+        if (state.busy) return;
+        const current = visibleCompany();
+        const jobId = button.dataset.cancelDossierJob;
+        if (!current?.id || !jobId) return;
+        state.busy = `cancel-job:${jobId}`;
+        render();
+        try {
+          const job = await api(`/jobs/${encodeURIComponent(jobId)}/cancel`, { method: "POST" });
+          rememberDossierJob(job, current.id);
+          if (isActiveJob(job)) {
+            state.notice = "正在等待当前步骤安全结束后取消";
+            monitorDossierJob(job, current.id);
+          } else {
+            stopJobMonitor(jobId);
+            state.notice = "档案生成任务已取消";
+          }
+        } catch (error) {
+          state.notice = apiErrorMessage(error, "暂时无法取消任务，请稍后重试。");
+        } finally {
+          state.busy = "";
+          render();
+        }
+      });
+    });
+
+    $$('[data-retry-dossier-job]').forEach((button) => {
+      button.addEventListener("click", async () => {
+        if (state.busy) return;
+        const current = visibleCompany();
+        const jobId = button.dataset.retryDossierJob;
+        if (!current?.id || !jobId) return;
+        state.busy = `retry-job:${jobId}`;
+        state.notice = "";
+        render();
+        try {
+          const job = await api(`/jobs/${encodeURIComponent(jobId)}/retry`, { method: "POST" });
+          rememberDossierJob(job, current.id);
+          state.notice = "任务已重新提交";
+          state.busy = "";
+          render();
+          monitorDossierJob(job, current.id);
+          return;
+        } catch (error) {
+          state.notice = apiErrorMessage(error, "暂时无法重试任务，请稍后再试。");
+        } finally {
+          state.busy = "";
+          render();
+        }
+      });
+    });
+
+    $("#qaForm")?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (state.busy) return;
+      const question = $("#qaQuestion").value.trim();
+      if (!question) return;
+      const current = visibleCompany();
+      if (!current?.id) return;
+      const pendingMessages = [
+        ...qaMessagesForCompany(current),
+        { role: "user", text: question },
+      ];
+      rememberCompanyQa(current.id, pendingMessages);
+      state.busy = "qa";
+      state.qaPendingCompanyId = current.id;
+      state.notice = "";
+      render();
+      scrollQaToBottom();
+      if (DEMO_MODE) {
+        const messages = [...qaMessagesForCompany(current)];
+        messages.push(answerSafeQuestion(current, question));
+        rememberCompanyQa(current.id, messages);
+        state.busy = "";
+        state.qaPendingCompanyId = "";
+        render();
+        scrollQaToBottom();
+        return;
+      }
+      try {
+        const result = await api(`/target-enterprises/${encodeURIComponent(current.id)}/qa`, { method: "POST", body: { question } });
+        const resolvedMessages = (result.messages || []).map(mapQaMessage);
+        const includesSubmittedQuestion = resolvedMessages.some(
+          (message) => message.role === "user" && message.text === question,
+        );
+        rememberCompanyQa(
+          current.id,
+          resolvedMessages.length
+            ? (includesSubmittedQuestion ? resolvedMessages : [...pendingMessages, ...resolvedMessages])
+            : pendingMessages,
+        );
+      } catch (error) {
+        state.notice = apiErrorMessage(error, "问答服务暂不可用，本次问题没有生成回答。");
+      } finally {
+        state.busy = "";
+        state.qaPendingCompanyId = "";
+      }
+      render();
+      scrollQaToBottom();
+    });
+  }
+
+  async function boot() {
+    const generation = ++bootGeneration;
+    if (DEMO_MODE) {
+      state.bootLoading = false;
+      state.bootError = "";
+      render();
+      return;
+    }
+    if (recoveryAccessToken && state.authView === "update") {
+      state.auth = {
+        checked: true,
+        enabled: true,
+        authenticated: false,
+        bootstrapRequired: false,
+        user: null,
+      };
+      state.bootLoading = false;
+      state.bootError = "";
+      render();
+      return;
+    }
+    state.bootLoading = true;
+    state.bootError = "";
+    render();
+    let settled = false;
+    const loadTask = (async () => {
+      const authStatus = await api("/auth/status", { skipAuthRedirect: true });
+      if (generation !== bootGeneration) return;
+      state.auth = {
+        checked: true,
+        enabled: Boolean(authStatus.enabled),
+        authenticated: Boolean(authStatus.authenticated),
+        bootstrapRequired: Boolean(authStatus.bootstrap_required),
+        user: authStatus.user || null,
+      };
+      if (state.auth.enabled && !state.auth.authenticated) {
+        settled = true;
+        state.bootLoading = false;
+        state.bootError = "";
+        render();
+        return;
+      }
+      await loadSalesData();
+    })()
+      .then(() => {
+        if (generation !== bootGeneration) return;
+        settled = true;
+        state.bootLoading = false;
+        state.bootError = "";
+        render();
+      })
+      .catch((error) => {
+        if (generation !== bootGeneration) return;
+        settled = true;
+        state.bootLoading = false;
+        state.bootError = `无法读取后端业务数据：${error.message || "服务连接失败"}`;
+        render();
+      });
+    await Promise.race([
+      loadTask,
+      wait(6000).then(() => {
+        if (settled || generation !== bootGeneration) return;
+        state.bootLoading = false;
+        state.bootError = "后端响应超时，请检查 API 服务和运行模式配置。";
+        render();
+      }),
+    ]);
+  }
+
+  boot();
+})();

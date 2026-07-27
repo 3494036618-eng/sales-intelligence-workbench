@@ -1,0 +1,170 @@
+import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import path from "node:path";
+import test from "node:test";
+import { fileURLToPath } from "node:url";
+
+const backendDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const rootDir = path.resolve(backendDir, "..");
+const appSource = await fs.readFile(path.join(rootDir, "frontend", "app.js"), "utf8");
+const textFormatSource = await fs.readFile(path.join(rootDir, "frontend", "text-format.js"), "utf8");
+const servicesSource = await fs.readFile(path.join(rootDir, "frontend", "services.js"), "utf8");
+const htmlSource = await fs.readFile(path.join(rootDir, "frontend", "index.html"), "utf8");
+const styleSource = await fs.readFile(path.join(rootDir, "frontend", "styles.css"), "utf8");
+
+test("formal frontend starts empty and keeps recording fixtures behind demo mode", () => {
+  assert.match(appSource, /if \(DEMO_MODE\) applySafeRecordingData\(\);\s*else prepareConnectedState\(\);/);
+  assert.match(appSource, /function prepareConnectedState\(\) \{[\s\S]*?goals = \[\];[\s\S]*?companies = \{\};/);
+  assert.match(appSource, /if \(DEMO_MODE && isBydItem\(item\)\) return \[\];/);
+  assert.match(appSource, /if \(DEMO_MODE && isBydItem\(company\(state\.activeCompanyId\)\)\)/);
+  assert.doesNotMatch(appSource, /if \(isBydItem\(item\)\) return \[\];/);
+});
+
+test("formal frontend keeps the sales workspace free of backend operations content", () => {
+  assert.match(appSource, /DEMO_MODE \? "南区销售工作台" : "销售智能工作台"/);
+  assert.doesNotMatch(appSource, /api\("\/providers\/status"\)/);
+  assert.doesNotMatch(appSource, /api\("\/admin\/status"\)/);
+  assert.match(appSource, /\/jobs\?job_type=sales_dossier_generation&entity_id=/);
+  assert.match(appSource, /api\(`\/jobs\/\$\{encodeURIComponent\(job\.id\)\}`\)/);
+  assert.doesNotMatch(appSource, /\/provider-runs\?entity_id=/);
+  assert.doesNotMatch(appSource, /配置诊断|运维状态|运行与资料管理|真实后端已配置|模型 Token/);
+  assert.doesNotMatch(appSource, /data-source-action|data-job-action/);
+  assert.doesNotMatch(appSource, /providers\/model\/probe/);
+  assert.doesNotMatch(appSource, /ARK_API_KEY|SUPABASE_SERVICE_ROLE_KEY|OPENVIKING_API_KEY/);
+});
+
+test("formal frontend still exposes the complete sales workflow", () => {
+  assert.match(appSource, /销售目标/);
+  assert.match(appSource, /查找企业/);
+  assert.match(appSource, /目标企业池/);
+  assert.match(appSource, /获取最新档案/);
+  assert.match(appSource, /历史资料/);
+  assert.match(appSource, /MATERIAL_FILTERS = \["全部", "档案", "飞书会话", "云文档"\]/);
+  assert.doesNotMatch(appSource, /MATERIAL_FILTERS = [^\n]*"会议纪要"/);
+  assert.match(appSource, /id="openFeishuImport"/);
+  assert.match(appSource, /联系人姓名或会话 ID/);
+  assert.match(appSource, /完整的飞书云文档或知识库链接/);
+  assert.doesNotMatch(appSource, /姓名、Open ID 或会话 ID|飞书云文档链接或 Token/);
+  assert.doesNotMatch(appSource, /导入企业资料/);
+  assert.match(appSource, /class="library-tools"[\s\S]*?class="secondary-button library-import-button" id="openFeishuImport"[\s\S]*?>导入飞书资料</);
+  assert.match(appSource, /id="feishuImportForm"/);
+  assert.match(appSource, /\/materials\/feishu-import/);
+  assert.match(appSource, /state\.materialFilter = task\.source_kind === "document" \? "云文档" : "飞书会话"/);
+  assert.match(appSource, /function historicalDossierRecords\(item\)/);
+  assert.match(appSource, /function historicalDossierRecords\(item\) \{\s+return \(item\.updates \|\| \[\]\)\.map/);
+  assert.doesNotMatch(appSource, /function historicalDossierRecords\(item\) \{[\s\S]*?\.slice\(1\)\.map/);
+  assert.match(appSource, /暂无历史档案/);
+  assert.match(appSource, /资料问答/);
+  assert.match(appSource, /仅根据当前企业档案和用户导入的飞书资料回答/);
+  assert.match(appSource, /paragraphs: \(message\.paragraphs \|\| \[\]\)/);
+  assert.match(appSource, /class="qa-answer-body"/);
+  assert.match(appSource, /function renderQaAnswerParagraph/);
+  assert.match(appSource, /collapseRepeatedCitationRuns\(qaAnswerParagraphs\(message\)\)/);
+  assert.match(appSource, /dedupeCitationEntries\(rawCitationEntries\)/);
+  assert.match(appSource, /citationGroup/);
+  assert.match(appSource, /class="qa-citation-anchor"/);
+  assert.doesNotMatch(appSource, /<div class="qa-answer-refs">/);
+  assert.match(appSource, /window\.SalesTextFormat/);
+  assert.match(appSource, /function splitDisplayParagraphs/);
+  assert.match(textFormatSource, /function splitReadableBlocks/);
+  assert.match(textFormatSource, /function collapseRepeatedCitationRuns/);
+  assert.match(textFormatSource, /function dedupeCitationEntries/);
+  assert.doesNotMatch(appSource, /\(\[\^\\n\]\)\(\?=\(\?:\\d\+\[\.\)、\]/);
+  assert.match(appSource, /class="chat-message assistant is-pending"/);
+  assert.match(appSource, /const pendingMessages = \[\s+\.\.\.qaMessagesForCompany\(current\),\s+\{ role: "user", text: question \},\s+\];/);
+  assert.match(appSource, /rememberCompanyQa\(current\.id, pendingMessages\);\s+state\.busy = "qa";/);
+  assert.match(appSource, /function scrollQaToBottom/);
+  assert.match(appSource, /\/target-enterprises\/\$\{encodeURIComponent\(current\.id\)\}\/dossiers/);
+  assert.match(appSource, /\/target-enterprises\/\$\{encodeURIComponent\(current\.id\)\}\/qa/);
+  assert.match(appSource, /data-cancel-dossier-job/);
+  assert.match(appSource, /data-retry-dossier-job/);
+  assert.match(appSource, /job\.stage_label/);
+  assert.match(appSource, /job\.progress/);
+  assert.match(appSource, /window\.sessionStorage\.getItem\(storageKey\)/);
+  assert.match(appSource, /clearDossierRequestIdempotencyKey\(current\.id\)/);
+  assert.match(appSource, /job\.stage !== "cancelling"/);
+  assert.match(appSource, /正在等待当前步骤安全结束后取消/);
+});
+
+test("formal frontend refreshes the active goal count after adding a company", () => {
+  assert.match(appSource, /if \(!goal\.pool\.includes\(id\)\) goal\.pool\.push\(id\);\s+goal\.stats = goalStats\(goal\.pool\.length\);/);
+});
+
+test("dossier versions and citations use API evidence only in formal mode", () => {
+  assert.match(appSource, /previousDossierId: item\.previous_dossier_id \|\| null/);
+  assert.doesNotMatch(appSource, /providerRunId|provider_run_id/);
+  assert.match(appSource, /data-dossier="\$\{escapeHtml\(update\.id\)\}"/);
+  assert.doesNotMatch(appSource, /与上一版比较|data-compare-dossier|version-comparison|\/compare\//);
+  assert.match(appSource, /if \(!DEMO_MODE\) return \[\];/);
+  assert.match(appSource, /暂无可验证的引用来源/);
+  assert.match(appSource, /source\.qualityLabel/);
+  assert.match(appSource, /source\.freshnessLabel/);
+  assert.match(appSource, /source\.verificationLabel/);
+  assert.doesNotMatch(appSource, /source\.conflictLabel|source\.conflict_label/);
+  assert.doesNotMatch(appSource, /关键字段存在来源差异/);
+  assert.doesNotMatch(appSource, /source\.entityMatch/);
+  assert.match(appSource, /source\.summary \|\| source\.excerpt/);
+  assert.doesNotMatch(appSource, /source\.provider/);
+  assert.match(appSource, /档案正文暂未加载/);
+});
+
+test("formal frontend has retryable connection and request-trace errors", () => {
+  assert.match(appSource, /error\.requestId = payload\.meta\?\.request_id \|\| ""/);
+  assert.match(appSource, /const requestId = error\?\.requestId \? `（请求 \$\{error\.requestId\}）` : ""/);
+  assert.match(appSource, /id="retryBoot"/);
+  assert.match(appSource, /\$\("#retryBoot"\)\?\.addEventListener\("click"/);
+  assert.match(appSource, /后端响应超时，请检查 API 服务和运行模式配置/);
+});
+
+test("formal frontend authenticates before loading business data and protects mutations with CSRF", () => {
+  assert.match(appSource, /api\("\/auth\/status", \{ skipAuthRedirect: true \}\)/);
+  assert.match(appSource, /bootstrap \? "\/auth\/bootstrap" : "\/auth\/login"/);
+  assert.match(appSource, /credentials: "same-origin"/);
+  assert.match(appSource, /cookieValue\("siw_csrf"\)/);
+  assert.match(appSource, /headers\["X-CSRF-Token"\] = csrfToken/);
+  assert.match(appSource, /id="logoutButton"/);
+  assert.match(appSource, /api\("\/auth\/logout", \{ method: "POST", skipAuthRedirect: true \}\)/);
+  assert.doesNotMatch(appSource, /AGENT_PLAN_API_KEY|SUPABASE_API_URL|service-role-secret|siw_access/);
+});
+
+test("formal frontend omits member administration and keeps password recovery without exposing auth secrets", () => {
+  assert.doesNotMatch(appSource, /openMemberAdmin|memberInviteForm|\/admin\/members/);
+  assert.match(appSource, /id="passwordRecoveryForm"/);
+  assert.match(appSource, /"\/auth\/password\/recover"/);
+  assert.match(appSource, /"\/auth\/password\/update"/);
+  assert.match(appSource, /window\.history\.replaceState/);
+  assert.doesNotMatch(appSource, /SUPABASE_SERVICE_ROLE_KEY|service_role/);
+});
+
+test("formal frontend assets carry the current cache key and responsive runtime styles", () => {
+  assert.match(htmlSource, /<title>销售智能工作台<\/title>/);
+  assert.match(htmlSource, /20260727-inline-citations/);
+  assert.match(htmlSource, /text-format\.js/);
+  assert.match(styleSource, /\.version-tabs/);
+  assert.match(styleSource, /\.citation-item/);
+  assert.match(styleSource, /\.qa-answer-body/);
+  assert.match(styleSource, /\.qa-answer-paragraph/);
+  assert.match(styleSource, /\.qa-citation-anchor/);
+  assert.match(styleSource, /vertical-align: super/);
+  assert.match(styleSource, /\.chat-message\.is-pending/);
+  assert.match(styleSource, /@keyframes qa-pending-pulse/);
+  assert.match(styleSource, /\.dossier-report-section/);
+  assert.match(styleSource, /\.dossier-report-content/);
+  assert.match(styleSource, /\.library-dossier-link/);
+  assert.match(styleSource, /\.connection-retry/);
+  assert.match(styleSource, /\.auth-panel/);
+  assert.match(styleSource, /\.member-modal/);
+  assert.match(styleSource, /\.feishu-import-modal/);
+  assert.match(styleSource, /\.library-import-button/);
+  assert.match(styleSource, /@media \(max-width: 780px\)/);
+  assert.match(styleSource, /\.sales-layout\.is-mobile-navigation-open \.sales-sidebar/);
+  assert.match(appSource, /id="mobileNavigationToggle"/);
+});
+
+test("HTTP-hosted frontend uses the same-origin API by default", () => {
+  for (const source of [appSource, servicesSource]) {
+    assert.match(source, /window\.location\.origin/);
+    assert.match(source, /`\$\{window\.location\.origin\}\/api`/);
+    assert.match(source, /\["http:", "https:"\]\.includes\(window\.location\.protocol\)/);
+  }
+});

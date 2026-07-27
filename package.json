@@ -1,0 +1,16 @@
+{
+  "name": "sales-intelligence-workbench-oss",
+  "version": "0.9.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "skill:install": "node scripts/install-codex-skill.mjs",
+    "skill:command": "node scripts/print-public-skill-command.mjs",
+    "skill:validate": "node scripts/validate-skill-package.mjs",
+    "skill:test": "node scripts/test-skill-installer.mjs",
+    "verify": "npm run skill:validate && npm run skill:test && npm --prefix backend run release:verify"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
