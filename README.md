@@ -237,10 +237,11 @@ node skills/sales-intelligence-workbench/scripts/start.mjs
 ## 开发与验证
 
 ```bash
+npm ci
 npm run verify
 ```
 
-根目录总验收会先检查 Skill 结构和隔离安装生命周期，再执行后端离线发布验收。整个流程依次覆盖前端语法、后端测试、发布密钥、Skill 分发包一致性和隔离安装生命周期，不访问外部 Provider，也不会产生 AFP。需要单独执行时可使用：
+`npm ci` 使用仓库锁文件建立可复现的 Node.js 环境。根目录总验收会先检查 Skill 结构和隔离安装生命周期，再执行后端离线发布验收。整个流程依次覆盖前端语法、后端测试、发布密钥、Skill 分发包一致性和隔离安装生命周期，不访问外部 Provider，也不会产生 AFP。需要单独执行时可使用：
 
 ```bash
 cd backend && npm test
