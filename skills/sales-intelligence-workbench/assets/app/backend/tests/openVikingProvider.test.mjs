@@ -46,7 +46,10 @@ test("sales OpenViking URIs isolate workspace, company and source", () => {
 test("text resource writes use explicit create and replace modes", async () => {
   const calls = [];
   const provider = new OpenVikingProvider({
-    env: envReader({ OPENVIKING_RUN_ENABLED: "true" }),
+    env: envReader({
+      OPENVIKING_RUN_ENABLED: "true",
+      OPENVIKING_CLI: process.execPath,
+    }),
     execFile: async (_command, args) => {
       calls.push(args);
       return {
@@ -103,7 +106,7 @@ test("text resource reads return canonical content from the official HTTP endpoi
 test("company-scoped retrieval passes the exact subtree URI", async () => {
   const calls = [];
   const provider = new OpenVikingProvider({
-    env: envReader(),
+    env: envReader({ OPENVIKING_CLI: process.execPath }),
     execFile: async (_command, args) => {
       calls.push(args);
       return { stdout: JSON.stringify({ result: { resources: [] } }), stderr: "" };
