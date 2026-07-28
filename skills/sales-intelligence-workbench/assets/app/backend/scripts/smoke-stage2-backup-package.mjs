@@ -30,7 +30,6 @@ const ids = {
   dossier: `${prefix}_dossier`,
   citation: `${prefix}_citation`,
   material: `${prefix}_material`,
-  message: `${prefix}_message`,
   openviking: `${prefix}_openviking`,
   syncSource: `${prefix}_sync_source`,
   checkpoint: `${prefix}_checkpoint`,
@@ -177,16 +176,6 @@ try {
     summary: "Synthetic only.",
     payload_json: { synthetic: true },
   });
-  await insert("sales_qa_messages", {
-    id: ids.message,
-    workspace_id: workspaceId,
-    company_id: ids.company,
-    session_id: `${prefix}_session`,
-    role: "assistant",
-    text: "Synthetic answer for restore verification.",
-    provider_run_id: ids.run,
-    payload_json: { synthetic: true },
-  });
   await insert("sales_openviking_refs", {
     id: ids.openviking,
     workspace_id: workspaceId,
@@ -236,7 +225,7 @@ try {
     "provider_connections", "sales_goals", "sales_companies", "jobs", "provider_runs",
     "provider_run_steps", "sales_target_enterprises", "sales_company_search_results",
     "sales_progress_snapshots", "sales_dossier_records", "sales_dossier_citations",
-    "sales_materials", "sales_qa_messages", "sales_openviking_refs", "sync_sources",
+    "sales_materials", "sales_openviking_refs", "sync_sources",
     "sync_checkpoints", "audit_events",
   ];
   for (const table of expectedTables) {

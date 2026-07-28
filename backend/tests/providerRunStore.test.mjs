@@ -43,6 +43,43 @@ test("provider run records redact secrets and retain safe usage metadata", async
   assert.equal(saved.steps[0].raw_ref, "model:request-1");
 });
 
+test("sales service provider run APIs expose diagnostics without internal references", async () => {
+  const store = new ProviderRunStore();
+  const service = new SalesService({
+    env: envReader(),
+    runtimePolicy: demoPolicy,
+    providerRunStore: store,
+  });
+  const run = await store.startRun({
+    operation: "public_provider_run",
+    app_mode: "production",
+    entity_type: "target_enterprise",
+    entity_id: "company-1",
+  });
+  await store.executeStep(run.id, {
+    provider: "model",
+    operation: "generate",
+    input_summary: "Generate a report.",
+  }, async () => ({
+    ok: true,
+    request_id: "request-private",
+    raw_ref: "model:request-private",
+    usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+  }));
+  await store.completeRun(run.id, { result_ref: "dossier:private" });
+
+  const detail = await service.getProviderRun(run.id);
+  const listed = await service.listProviderRuns({ operation: "public_provider_run" });
+  for (const publicRun of [detail, listed[0]]) {
+    assert.equal(publicRun.id, run.id);
+    assert.equal(publicRun.steps[0].provider, "model");
+    assert.equal(publicRun.steps[0].usage.total_tokens, 15);
+    assert.equal(Object.hasOwn(publicRun, "result_ref"), false);
+    assert.equal(Object.hasOwn(publicRun.steps[0], "request_id"), false);
+    assert.equal(Object.hasOwn(publicRun.steps[0], "raw_ref"), false);
+  }
+});
+
 test("provider run failure retains bounded redacted validation diagnostics", async () => {
   const store = new ProviderRunStore();
   const run = await store.startRun({ operation: "validation_failure", app_mode: "production" });

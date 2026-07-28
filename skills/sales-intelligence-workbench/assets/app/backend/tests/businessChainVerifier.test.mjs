@@ -5,6 +5,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import {
+  assertDossierPersistenceBoundary,
   assertProviderRun,
   collectPrivatePaths,
   parseArgs,
@@ -116,6 +117,28 @@ test("provider evidence requires each expected real provider to succeed", () => 
       steps: [{ provider: "datapro", status: "succeeded" }, { provider: "web_search", status: "failed" }],
     }, ["datapro", "web_search"], "企业搜索"),
     /未成功：web_search/,
+  );
+});
+
+test("dossier acceptance enforces Supabase persistence without duplicating the report in OpenViking", () => {
+  assert.doesNotThrow(() => assertDossierPersistenceBoundary({
+    steps: [{
+      provider: "openviking",
+      operation: "store_dossier_memory",
+      status: "skipped",
+      output_summary: "档案属于结构化业务记录，由 Supabase 保存，不重复写入 OpenViking。",
+    }],
+  }));
+  assert.throws(
+    () => assertDossierPersistenceBoundary({
+      steps: [{
+        provider: "openviking",
+        operation: "store_dossier_memory",
+        status: "succeeded",
+        output_summary: "已重复保存。",
+      }],
+    }),
+    /未遵守 Supabase 持久化/,
   );
 });
 

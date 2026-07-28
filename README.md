@@ -1,6 +1,6 @@
 # 销售智能工作台
 
-销售智能工作台把企业专业数据、公开信息、飞书资料和长期记忆组织成可追溯的企业档案与资料问答。项目包含完整前后端、Supabase 数据层、OpenViking 记忆链路，以及可安装和运维应用的 Codex Skill。
+销售智能工作台把企业专业数据、公开信息、飞书资料和长期记忆组织成可追溯的企业档案与资料问答。项目包含完整前后端、Supabase 数据层、OpenViking 记忆链路，以及可在 Codex 和 Claude Code 中安装并运维应用的同一份 Skill。
 
 > 当前为 `0.9.0` Beta，仅支持单工作区、单人使用，以及本机或受控内网自托管。已支持 Supabase Auth、工作区数据隔离、安全请求边界、工作区级付费任务保护、持久化异步任务队列和独立 Worker。首版不提供公网生产 SaaS、多人协作或 SLA；不要把 Node.js 服务端口直接暴露到公网。
 
@@ -59,38 +59,55 @@ npm run skill:command -- \
   --ref v0.9.0
 ```
 
-把命令输出的整句话交给用户。用户只需在 Codex 中发送：
+把命令输出的整句话交给用户。用户可在 Codex 或 Claude Code 中发送：
 
 > 帮我初始化销售助手：`https://github.com/<组织>/<仓库>/blob/v0.9.0/skills/sales-intelligence-workbench/SKILL.md`
 
-该 URL 直接指向唯一的正式 Skill。即使用户本机没有仓库、依赖和配置文件，Codex 也会先
-解释下载与本机写入影响，再从 URL 锁定的 release 取得完整仓库，执行离线校验、安装
-Skill，并立即衔接下面的 Cookbook 搭建流程。读取 URL、下载仓库和离线校验不会创建云资源
-或产生 AFP。
+该 URL 直接指向唯一的正式 Skill。即使用户本机没有仓库、依赖和配置文件，当前 Agent 也会
+先解释下载与本机写入影响，再从 URL 锁定的 release 取得完整仓库，执行离线校验，并把同一份
+Skill 安装到当前客户端后立即衔接下面的 Cookbook 搭建流程。读取 URL、下载仓库和离线校验
+不会创建云资源或产生 AFP。
 
 这里的“从 0 搭建”不等于绕过第三方服务授权：用户仍需拥有 Agent Plan 及对应 Harness
-权限，并在流程中完成 Supabase、OpenViking 和可选飞书资料的授权。Skill 负责识别缺项、
-逐步引导、写入本机私密配置和验收，而不是要求用户预先配置好再开始。
+权限，并在流程中完成 Supabase、OpenViking 和可选飞书资料的账号授权。用户侧只输入一枚
+Agent Plan Key；OpenViking 与 Supabase 的内部连接信息由 Skill 自动获取和私密保存，不要求
+第二个 Key、Supabase Key 或火山 AK/SK。Skill 负责识别缺项、逐步引导、写入本机私密配置和验收。
 
-当前目录还没有公开 Git 远端和 release tag，因此上面的 `<组织>/<仓库>` 不是可发送给
-外部用户的真实地址。发布者必须先完成仓库公开、LICENSE 确认和 release 验收，再用生成
-脚本得到最终 URL；不得把占位地址写进宣传材料。
+当前仓库已有发布候选远端和 `v0.9.0-rc.1` 候选标签，但本轮待验收改动尚未形成经用户
+确认的不可变正式 tag，因此上面的占位地址仍不能发送给外部用户。发布者必须先完成
+LICENSE 与代码归属确认、干净环境安装和最终业务验收，取得明确发布许可后，再用生成脚本
+得到最终 URL；不得把旧候选标签或占位地址写进宣传材料。
 
 ### 面向维护者：本地安装
 
-克隆仓库后，在仓库根目录安装 Skill：
+克隆仓库后，在仓库根目录按使用的客户端安装同一份 Skill：
 
 ```bash
-npm run skill:install
+npm run skill:install:codex
+npm run skill:install:claude
 ```
 
-重新启动 Codex 后直接描述业务目标：
+同时使用两个客户端时可以一次安装：
+
+```bash
+npm run skill:install:all
+```
+
+`npm run skill:install` 保留为 Codex 安装别名。安装目录分别是
+`${CODEX_HOME:-~/.codex}/skills/sales-intelligence-workbench` 和
+`${CLAUDE_CONFIG_DIR:-~/.claude}/skills/sales-intelligence-workbench`，两端不共享或覆盖配置目录。
+
+重新启动对应客户端后直接描述业务目标：
 
 > 按 Cookbook 步骤帮我搭建销售团队工作台。目标是服务新能源汽车企业客户，历史资料来自飞书云文档和会话，部署在本机。
 
 也可以明确输入：
 
 > 请使用 $sales-intelligence-workbench 搭建我的销售团队工作台。
+
+在 Claude Code 中也可以输入：
+
+> /sales-intelligence-workbench
 
 Skill 会先确认销售目标和资料范围，再通过可恢复的安全编排器安装经过测试的完整前后端模板，依次连接 Agent Plan 模型与 Harness、Agent Plan Supabase、OpenViking 和授权资料，最后运行真实企业搜索、档案及资料问答验收。它不会为每位用户临时拼一套静态前端，也不会用演示数据冒充完成；云资源写入、真实调用、登录和业务验收都会停下来取得用户确认。
 
@@ -109,7 +126,8 @@ node skills/sales-intelligence-workbench/scripts/setup.mjs
 更新已安装 Skill：
 
 ```bash
-npm run skill:install -- --force
+npm run skill:install:codex -- --force
+npm run skill:install:claude -- --force
 ```
 
 完整阶段与验收标准见 [Cookbook 搭建流程](skills/sales-intelligence-workbench/references/cookbook-workflow.md)。下面的手工命令适合排障或不通过 Agent 运行时使用。
@@ -119,7 +137,7 @@ npm run skill:install -- --force
 - Node.js 20 或更高版本。
 - 可用的 Agent Plan 模型、DataPro 和豆包联网搜索权限。
 - 北京地域、已启用 Agent Plan 抵扣的火山引擎 Supabase Workspace。
-- OpenViking 服务或本地 CLI。
+- Agent Plan 已开启 OpenViking Harness；本机有 `uvx` 时可自动调用官方控制面。
 - 可选：已安装并以用户身份登录的 `lark-cli`。
 - 数据库初始化、迁移和备份需要 `byted-supabase-cli` 及相应控制面权限。
 
@@ -140,9 +158,21 @@ node skills/sales-intelligence-workbench/scripts/configure.mjs \
   --mode production
 ```
 
+### 初始化 OpenViking
+
+先只读查看已有记忆库：
+
+```bash
+node skills/sales-intelligence-workbench/scripts/setup-openviking.mjs
+```
+
+脚本会给出复用已有记忆库的准确命令。没有资源时，确认名称、持续计费和数量上限后再使用
+`--apply --collection-name <英文名称> --yes` 创建。用户不输入第二个 Key；内部连接信息
+由官方控制面返回并以 `0600` 保存。
+
 ### 初始化 Supabase
 
-先用 Agent Plan 身份登录 Supabase CLI，并把 profile 名写入私密配置的 `SUPABASE_CLI_PROFILE`：
+先用 Agent Plan 身份登录 Supabase CLI。这里完成的是火山账号 OAuth 授权，不是输入另一枚 Key：
 
 ```bash
 byted-supabase-cli login --profile agent-plan --region cn-beijing --is-agent-plan
@@ -160,13 +190,17 @@ byted-supabase-cli projects create <workspace-name> --profile agent-plan --is-ag
 node skills/sales-intelligence-workbench/scripts/setup-supabase.mjs
 ```
 
-确认目标 Workspace 后执行：
+只有一个 Agent Plan Workspace 时脚本会自动选择；存在多个时按计划输出的 ID 明确选择。确认目标后执行：
 
 ```bash
-node skills/sales-intelligence-workbench/scripts/setup-supabase.mjs --apply --yes
+node skills/sales-intelligence-workbench/scripts/setup-supabase.mjs \
+  --apply \
+  --workspace-id <workspace-id> \
+  --profile agent-plan \
+  --yes
 ```
 
-该命令会先确认目标是 Agent Plan Workspace，再获取 Data API 地址和 Service Role Key、写入本机 `0600` 配置、应用版本化迁移、创建应用 Workspace 记录并回读验证。普通按量 Workspace 会被拒绝；命令不会创建、暂停或删除云 Workspace。
+该命令会先确认目标是 Agent Plan Workspace，再自动获取 Data API 地址和后端内部凭据、写入本机 `0600` 配置、应用版本化迁移、创建应用 Workspace 记录并回读验证。用户无需输入或查看内部凭据。普通按量 Workspace 会被拒绝；命令不会创建、暂停或删除云 Workspace。
 
 ### 诊断与启动
 
@@ -261,7 +295,7 @@ node skills/sales-intelligence-workbench/scripts/self-test.mjs
 
 - 当前是单工作区、单人自托管架构；不提供成员邀请与角色管理，也尚未支持企业 SSO、MFA 和多工作区管理。
 - 本机默认使用 HTTP；公网部署需自行配置 HTTPS 反向代理，并启用 Secure Cookie。
-- 已有 IP/用户级限流、请求体上限、Workspace 付费任务保护、Provider 熔断和独立异步 Worker；生产库必须应用到 `202607230003`。当前仍没有精确 AFP/金额预算。
+- 已有 IP/用户级限流、请求体上限、Workspace 付费任务保护、Provider 熔断和独立异步 Worker；生产库必须应用到 `202607280002`。当前仍没有精确 AFP/金额预算。
 - 当前持久化异步队列覆盖档案生成和 OpenViking 批量同步；前端飞书导入使用后端进程内受控任务，服务重启后任务进度不会恢复，但已成功写入的 OpenViking 正文和 Supabase 同步元数据不会丢失。首个稳定版还需把导入任务迁入持久化队列，并完成高可用 Worker 和容量压测。
 - 飞书读取范围受当前用户权限和飞书 CLI 能力限制，不能绕过平台权限。
 - 新建 Supabase Workspace 可能持续计费，因此 Skill 不会未经确认自动创建。

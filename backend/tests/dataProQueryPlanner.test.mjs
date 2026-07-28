@@ -14,6 +14,14 @@ function envReader(values = {}) {
   };
 }
 
+test("DataPro allows slower professional queries while preserving an explicit override", () => {
+  assert.equal(new DataProProvider({ env: envReader() }).timeoutMs, 60_000);
+  assert.equal(
+    new DataProProvider({ env: envReader({ DATAPRO_TIMEOUT_MS: "45000" }) }).timeoutMs,
+    45_000,
+  );
+});
+
 test("dossier query planner selects business, risk, and industry datasets through the same MCP", () => {
   const provider = new DataProProvider({ env: envReader({ DATAPRO_MAX_SOURCES: "4" }) });
   const queries = provider.planDossierQueries({

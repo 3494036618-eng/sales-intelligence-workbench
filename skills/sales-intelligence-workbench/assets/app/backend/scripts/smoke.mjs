@@ -309,9 +309,6 @@ try {
     persistSalesDossier(dossier) {
       salesPersistCalls.push(`dossier:${dossier.company_id}`);
     },
-    persistSalesQaMessage(company, message) {
-      salesPersistCalls.push(`qa:${company.id}:${message.role}`);
-    },
     persistSalesOpenVikingRef(record) {
       salesPersistCalls.push(`ov:${record.related_type}`);
     },

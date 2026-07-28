@@ -166,8 +166,8 @@ export class SupabaseRepository {
   ensureSalesReady(seed) {
     if (this.salesInitialized) return;
     if (!this.workspaceId) throw new Error("APP_WORKSPACE_ID is required for Supabase sales persistence.");
-    const migrations = this.query("select version from public.schema_migrations where version = '202607230003' limit 1;");
-    if (!migrations.length) throw new Error("Supabase safe asynchronous job migration is not applied.");
+    const migrations = this.query("select version from public.schema_migrations where version = '202607280002' limit 1;");
+    if (!migrations.length) throw new Error("Supabase security boundary migration is not applied.");
     const workspaces = this.query(`select id from public.app_workspaces where id = ${sqlString(this.workspaceId)}::uuid limit 1;`);
     if (!workspaces.length) throw new Error(`Application workspace is not initialized: ${this.workspaceId}`);
     this.salesInitialized = true;
@@ -1236,28 +1236,6 @@ export class SupabaseRepository {
         error_json = excluded.error_json,
         updated_at = excluded.updated_at
       where public.sync_checkpoints.workspace_id = excluded.workspace_id;
-    `);
-  }
-
-  persistSalesQaMessage(company, message) {
-    this.query(`
-      insert into public.sales_qa_messages (id, workspace_id, company_id, session_id, role, text, provider_run_id, created_at, payload_json)
-      values (
-        ${sqlString(message.id)},
-        ${sqlString(this.workspaceId)}::uuid,
-        ${sqlString(company.id)},
-        ${sqlString(company.qa_session_id || `sales-${company.id}`)},
-        ${sqlString(message.role)},
-        ${sqlString(message.text)},
-        ${sqlString(message.provider_run_id)},
-        ${sqlString(message.created_at || nowIso())},
-        ${sqlJson(message)}
-      )
-      on conflict (id) do update set
-        text = excluded.text,
-        provider_run_id = excluded.provider_run_id,
-        payload_json = excluded.payload_json
-      where public.sales_qa_messages.workspace_id = excluded.workspace_id;
     `);
   }
 

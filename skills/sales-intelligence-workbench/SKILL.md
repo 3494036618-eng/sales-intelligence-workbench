@@ -9,8 +9,9 @@ description: 从 0 到 1 搭建、配置、验收和维护真实数据驱动的�
 
 ## 远程 Skill 入口
 
-用户可能直接通过公开的主 Skill URL 触发本流程，而不是预先克隆仓库、安装 Skill 或准备
-本机配置。正式口令采用以下形式，并固定到不可变的 release tag 或 commit：
+用户可能在 Codex 或 Claude Code 中直接通过公开的主 Skill URL 触发本流程，而不是预先克隆
+仓库、安装 Skill 或准备本机配置。两端使用同一份 Skill 和同一套业务逻辑。正式口令采用以下
+形式，并固定到不可变的 release tag 或 commit：
 
 ```text
 帮我初始化销售助手：https://github.com/<owner>/<repo>/blob/<ref>/skills/sales-intelligence-workbench/SKILL.md
@@ -25,16 +26,21 @@ description: 从 0 到 1 搭建、配置、验收和维护真实数据驱动的�
    `{baseDir}/scripts/`、`{baseDir}/references/`、`{baseDir}/assets/app/` 及仓库根目录
    `package.json` 均存在。
 3. 在仓库根目录执行 `node scripts/validate-skill-package.mjs` 和
-   `node scripts/test-skill-installer.mjs`。两项都通过后执行 `npm run skill:install`；
-   已安装旧版时先说明影响，再使用 `npm run skill:install -- --force`。
-4. 立即使用刚取得仓库中的本文件继续阶段 0，不要求用户重启 Codex，也不让用户重复提供
-   源码目录。
+   `node scripts/test-skill-installer.mjs`。两项都通过后按当前客户端安装：
+   - Codex：`npm run skill:install:codex`
+   - Claude Code：`npm run skill:install:claude`
+   - 用户明确要求两端都安装：`npm run skill:install:all`
+   已安装旧版时先说明影响，再为对应命令追加 `-- --force`。
+4. 立即使用刚取得仓库中的本文件继续阶段 0，不要求用户重启当前客户端，也不让用户重复
+   提供源码目录。后续重新打开时，Codex 使用 `$sales-intelligence-workbench`，Claude Code
+   使用 `/sales-intelligence-workbench`。
 5. 已有同名目录时先核对 Git remote、版本和工作区状态；不覆盖用户改动，不创建第二套
    运行时。下载、校验和安装阶段不创建云资源、不调用模型或 Harness、不产生 AFP。
 
 “什么也没配置”表示用户不需要预先准备本地项目、依赖或配置文件，不代表可以绕过云服务
-账号、Agent Plan 套餐、Supabase/OpenViking 权限、飞书登录或真实调用费用。Agent 必须在
-对应阶段解释并引导完成这些必要授权。
+账号、Agent Plan 套餐、Supabase/OpenViking 权限、飞书登录或真实调用费用。用户侧只输入
+一枚 Agent Plan Key；OpenViking 记忆库的内部访问凭证由初始化脚本自动获取和私密保存，
+不得要求用户查找、粘贴或管理第二个 Key。
 
 ## 执行原则
 
@@ -76,7 +82,7 @@ node {baseDir}/scripts/setup.mjs --init \
 node {baseDir}/scripts/onboard.mjs
 ```
 
-它会读取 `setup.mjs` 的阶段状态，自动执行本地安装、交互配置和启动等可恢复步骤；遇到 Supabase 写入、真实 Provider 调用、用户登录、飞书导入或付费业务验收时必须暂停并说明影响。只有用户明确确认后，才能分别追加 `--apply-supabase --yes` 或 `--confirm-live`。不得替用户自动创建、暂停或删除云 Workspace。
+它会读取 `setup.mjs` 的阶段状态，自动执行本地安装、交互配置和启动等可恢复步骤；遇到 Supabase 写入、OpenViking 新资源创建、真实 Provider 调用、用户登录、飞书导入或付费业务验收时必须暂停并说明影响。只有用户明确确认后，才能追加相应的 `--apply-*`、`--yes` 或 `--confirm-live`。不得替用户自动创建、暂停或删除云资源。
 
 需要只读查看阶段和唯一下一步时运行：
 
@@ -132,7 +138,7 @@ node {baseDir}/scripts/configure.mjs --from-env-file /绝对路径/.env.local --
 byted-supabase-cli login --profile agent-plan --region cn-beijing --is-agent-plan
 ```
 
-把 `SUPABASE_CLI_PROFILE=agent-plan` 写入私密运行配置。需要新建时，先确认费用与休眠策略，再由具备 `aidap:CreateWorkspace` 权限的账号执行 `projects create --profile agent-plan --is-agent-plan`。
+这里完成的是火山账号 OAuth 授权，不是要求用户输入另一枚 Key。需要新建时，先确认费用与休眠策略，再由具备 `aidap:CreateWorkspace` 权限的账号执行 `projects create --profile agent-plan --is-agent-plan`。
 
 已有火山 Supabase Workspace 时，先查看不会写入的初始化计划：
 
@@ -140,13 +146,17 @@ byted-supabase-cli login --profile agent-plan --region cn-beijing --is-agent-pla
 node {baseDir}/scripts/setup-supabase.mjs
 ```
 
-确认目标后执行：
+只有一个 Agent Plan Workspace 时脚本会自动选择；存在多个时按计划输出的 ID 明确选择。确认目标后执行：
 
 ```bash
-node {baseDir}/scripts/setup-supabase.mjs --apply --yes
+node {baseDir}/scripts/setup-supabase.mjs \
+  --apply \
+  --workspace-id <workspace-id> \
+  --profile agent-plan \
+  --yes
 ```
 
-该命令先只读核验 Workspace 的 Agent Plan 属性与 Running 状态，再读取 Data API 地址和 Service Role Key、保存到本机私密配置、应用迁移、创建应用 Workspace 记录并回读验证；不会创建、暂停或删除云 Workspace。
+该命令先只读核验 Workspace 的 Agent Plan 属性与 Running 状态，再自动读取 Data API 地址和后端内部凭据、保存到本机私密配置、应用迁移、创建应用 Workspace 记录并回读验证。用户无需输入 Supabase Key、Data API 地址或火山 AK/SK；命令不会创建、暂停或删除云 Workspace。
 
 已有完整 Data API 配置、只需检查迁移时运行：
 
@@ -162,7 +172,34 @@ node {baseDir}/scripts/migrate.mjs --apply
 
 不要对来源不明的现有生产库直接迁移。
 
-## 5. 诊断并启动
+## 5. 初始化 OpenViking 记忆库
+
+先用 Agent Plan Key 只读列出当前账号的记忆库：
+
+```bash
+node {baseDir}/scripts/setup-openviking.mjs
+```
+
+复用已有记忆库时，按脚本返回的 ResourceID 执行：
+
+```bash
+node {baseDir}/scripts/setup-openviking.mjs --apply --resource-id <ov-资源ID>
+```
+
+没有可复用资源时，先让用户确认英文名称、持续计费和单账号最多 20 个的限制，再创建：
+
+```bash
+node {baseDir}/scripts/setup-openviking.mjs \
+  --apply \
+  --collection-name <英文名称> \
+  --yes
+```
+
+脚本通过官方 OpenViking 控制面等待资源进入 `READY`，再自动获取该记忆库的内部访问凭证并
+以 `0600` 写入本机私密配置。内部凭证不得显示到终端、聊天、前端或文档，也不得要求用户
+输入。已有官方 OpenViking CLI 配置或已完成内部配置时直接复用，不重复创建资源。
+
+## 6. 诊断并启动
 
 配置检查不访问外部服务：
 
@@ -197,7 +234,7 @@ node {baseDir}/scripts/stop.mjs
 
 `start.mjs` 同时管理同源 API 和独立任务 Worker；`status.mjs` 中 `running` 与 `worker_running` 都应为 `true`。档案和 OpenViking 批量同步由 Worker 执行，不能只启动 API。运行中取消只登记请求，Worker 到达安全检查点后才释放付费预约并允许重试。
 
-## 6. 导入飞书资料
+## 7. 导入飞书资料
 
 本项目规定使用 **Codex CLI 调度飞书 CLI**，不以 Feishu MCP 或群机器人替代用户态读取。先阅读 `references/feishu-import.md`。
 
@@ -222,7 +259,7 @@ node {baseDir}/scripts/import-feishu.mjs \
 node {baseDir}/scripts/logout.mjs
 ```
 
-## 7. 验收真实链路
+## 8. 验收真实链路
 
 `verify-real-chain.mjs` 只做模型、DataPro、豆包搜索、OpenViking 和 Supabase 的最小只读诊断，不写业务数据，不能替代产品验收：
 
@@ -253,7 +290,7 @@ node {baseDir}/scripts/smoke-async-job-queue.mjs
 
 两项检查都必须显示 `transaction: rolled_back` 和 `provider_calls: 0`。
 
-## 8. 备份、恢复与升级
+## 9. 备份、恢复与升级
 
 ```bash
 node {baseDir}/scripts/backup.mjs
@@ -271,7 +308,7 @@ node {baseDir}/scripts/upgrade.mjs --source /绝对路径/新源码
 
 恢复默认只预检；执行写入还需原恢复脚本要求的 `--apply`、独立目标和确认参数。升级前先停止服务并建议备份。
 
-## 9. 卸载
+## 10. 卸载
 
 保留配置、日志、备份和云端数据：
 

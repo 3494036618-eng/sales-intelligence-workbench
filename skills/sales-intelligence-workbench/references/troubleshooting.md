@@ -12,7 +12,9 @@
 - 查看 `local.blockers` 和 `backend.blockers`，只补对应资源。
 - `credentials.env 权限过宽`：执行 `chmod 600`。
 - Supabase 缺配置：Data API 需要 URL、service role 和应用 Workspace ID；控制面优先使用 `SUPABASE_CLI_PROFILE`，目标必须是 Agent Plan Workspace。
-- OpenViking 缺配置：提供 API Key + Base URL，或配置可执行 CLI。
+- OpenViking 缺配置：运行 `setup-openviking.mjs` 只读查看可复用记忆库，再用
+  `--apply --resource-id` 连接；没有资源时确认计费影响后用
+  `--apply --collection-name <英文名称> --yes` 创建。不要让用户输入第二个 Key。
 - 飞书导入缺 CLI：安装并登录 `lark-cli`，或明确设置 `FEISHU_CLI_IMPORT_ENABLED=false`。
 
 ## live doctor 失败

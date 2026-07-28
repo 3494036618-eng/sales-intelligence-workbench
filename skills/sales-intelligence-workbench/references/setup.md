@@ -22,7 +22,7 @@
 优先反复运行 `onboard.mjs`。它会根据阶段状态自动完成本地安装、配置引导和启动，并在需要云资源写入、真实调用、登录、资料导入或业务验收时暂停。手工排障时按以下顺序执行：
 
 1. `install.mjs` 安装应用并执行测试。
-2. `configure.mjs` 写入真实资源配置。
+2. `configure.mjs` 只收集一枚 Agent Plan Key 和业务选项。
 3. `setup-supabase.mjs` 查看 Supabase 初始化计划。
 4. 用户确认目标后运行 `setup-supabase.mjs --apply --yes`，自动获取 Data API 配置、执行迁移、创建应用 Workspace 记录并回读。
 5. 配置 Supabase Auth 密码恢复和受保护的本机或内网入口；当前 Beta 是单工作区、单人使用模式。
@@ -38,14 +38,14 @@
 
 Skill 复用应用包中的版本化 `supabase/migrations`。目标必须是北京地域的 Agent Plan Workspace；初始化脚本会只读检查 `is_agent_plan` / `is_agent_plan_instance` 与 Running 状态，普通按量 Workspace 会被拒绝。
 
-先登录一个明确的 Agent Plan CLI profile，并在私密 `runtime.env` 中设置 `SUPABASE_CLI_PROFILE=agent-plan`：
+先登录一个明确的 Agent Plan CLI profile：
 
 ```bash
 byted-supabase-cli login --profile agent-plan --region cn-beijing --is-agent-plan
 ```
 
-`setup-supabase.mjs` 默认只显示计划，只有 `--apply --yes` 才读取端点与 API Key、写本机配置并执行 SQL。指定 profile 后，脚本会忽略旧的静态 AK/SK，防止连到另一个账号。业务运行使用 Supabase Data API；控制面 CLI 仅用于首次初始化、迁移、资源管理、备份和恢复。
+`setup-supabase.mjs` 会列出当前账号下的 Agent Plan Workspace；只有一个时自动选择，存在多个时要求通过 `--workspace-id` 明确目标。默认只显示计划，只有 `--apply --yes` 才读取端点与内部 API Key、写本机配置并执行 SQL。指定 profile 后，脚本会忽略旧的静态 AK/SK，防止连到另一个账号。用户无需输入 Supabase Key、Data API 地址或火山 AK/SK；业务运行使用脚本私下配置的 Supabase Data API，控制面 CLI 仅用于首次初始化、迁移、资源管理、备份和恢复。
 
-脚本不会创建云 Workspace，因为该操作可能持续计费。需要新建时，先由用户确认目标套餐、地域和自动休眠时间，再由有 `aidap:CreateWorkspace` 权限的账号执行 `byted-supabase-cli projects create <name> --profile agent-plan --is-agent-plan`，随后把返回的 Workspace ID 填入 `configure.mjs`。
+脚本不会创建云 Workspace，因为该操作可能持续计费。需要新建时，先由用户确认目标套餐、地域和自动休眠时间，再由有 `aidap:CreateWorkspace` 权限的账号执行 `byted-supabase-cli projects create <name> --profile agent-plan --is-agent-plan`；随后再次运行 `setup-supabase.mjs`，脚本会自动发现新 Workspace。
 
 恢复不得覆盖当前生产分支。先创建独立空工作区或独立空分支，完成预检、校验哈希和行数后再按恢复脚本要求显式确认。

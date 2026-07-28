@@ -12,6 +12,8 @@
     "doctor:live": "node scripts/baseline-real-readonly.mjs --live",
     "db:migrate": "node scripts/migrate-supabase.mjs --apply",
     "db:migrate:check": "node scripts/migrate-supabase.mjs",
+    "db:verify-qa-boundary": "node scripts/verify-openviking-qa-boundary.mjs",
+    "db:verify-security-boundary": "node scripts/verify-supabase-security-boundary.mjs",
     "db:bootstrap-workspace": "node scripts/bootstrap-workspace.mjs",
     "db:configure-data-api": "node scripts/configure-supabase-data-api.mjs",
     "db:backup": "node scripts/backup-supabase.mjs",

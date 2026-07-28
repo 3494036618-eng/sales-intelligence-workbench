@@ -3,6 +3,7 @@ import { Writable } from "node:stream";
 import readline from "node:readline/promises";
 import {
   configurationSummary,
+  openVikingCliConfiguration,
   parseEnvFile,
   paths,
   readConfiguration,
@@ -75,7 +76,7 @@ try {
   const agentPlanKey = await hiddenQuestion(
     rl,
     output,
-    "Agent Plan API Key（模型、DataPro、豆包搜索、OpenViking 和视觉模型共用）",
+    "Agent Plan API Key（模型、DataPro、豆包搜索、视觉模型和 OpenViking 控制面共用）",
     existing.AGENT_PLAN_API_KEY
       || existing.MODEL_API_KEY
       || existing.DATAPRO_API_KEY
@@ -83,23 +84,25 @@ try {
       || existing.VISION_API_KEY,
   );
   if (!agentPlanKey) throw new Error("Agent Plan API Key 不能为空。");
-  const openVikingKey = await hiddenQuestion(rl, output, "OpenViking 专用 API Key（高级覆盖，通常留空）", existing.OPENVIKING_API_KEY);
-  const openVikingBaseUrl = await visibleQuestion(rl, "OpenViking Base URL（使用本地 CLI 时可留空）", existing.OPENVIKING_BASE_URL);
-  const openVikingCli = await visibleQuestion(rl, "OpenViking CLI 路径（可留空）", existing.OPENVIKING_CLI);
-  const openVikingCliConfig = await visibleQuestion(rl, "OpenViking CLI 配置路径（默认 ~/.openviking/ovcli.conf）", existing.OPENVIKING_CLI_CONFIG);
-  const openVikingAgentId = await visibleQuestion(rl, "OpenViking Agent ID", existing.OPENVIKING_AGENT_ID || "default");
+  const detectedOpenViking = openVikingCliConfiguration(existing);
+  const openVikingKey = existing.OPENVIKING_API_KEY || "";
+  const openVikingBaseUrl = existing.OPENVIKING_BASE_URL || "";
+  let openVikingCliConfig = existing.OPENVIKING_CLI_CONFIG || "";
+  if (detectedOpenViking.ready && !openVikingKey) {
+    openVikingCliConfig = detectedOpenViking.path;
+    process.stdout.write(`已自动接入本机 OpenViking CLI 配置：${detectedOpenViking.path}\n`);
+  } else if (!openVikingKey) {
+    process.stdout.write(
+      "Agent Plan Key 已保存；OpenViking 记忆库将在下一阶段自动选择或创建，无需输入其他 Key。\n",
+    );
+  }
+  const openVikingCli = existing.OPENVIKING_CLI || "";
+  const openVikingAgentId = existing.OPENVIKING_AGENT_ID || detectedOpenViking.agent_id || "default";
 
-  const supabaseApiUrl = await visibleQuestion(rl, "Supabase Data API URL", existing.SUPABASE_API_URL);
-  const supabaseServiceRole = await hiddenQuestion(rl, output, "Supabase Service Role Key", existing.SUPABASE_SERVICE_ROLE_KEY);
-  const appWorkspaceId = await visibleQuestion(
-    rl,
-    "应用 Workspace UUID（首次配置留空将自动生成）",
-    existing.APP_WORKSPACE_ID,
+  process.stdout.write(
+    "Supabase 将在下一阶段通过已登录的官方 CLI 自动选择 Agent Plan Workspace，"
+      + "并获取后端内部连接信息；无需输入 Data API、Service Role 或火山 AK/SK。\n",
   );
-  const cloudWorkspaceId = await visibleQuestion(rl, "火山 Supabase Workspace ID", existing.SUPABASE_WORKSPACE_ID);
-  const branchId = await visibleQuestion(rl, "火山 Supabase Branch ID", existing.SUPABASE_BRANCH_ID);
-  const volcAccessKey = await hiddenQuestion(rl, output, "火山 Access Key（仅迁移/备份/资源管理需要）", existing.VOLCENGINE_ACCESS_KEY);
-  const volcSecretKey = await hiddenQuestion(rl, output, "火山 Secret Key（仅迁移/备份/资源管理需要）", existing.VOLCENGINE_SECRET_KEY);
 
   const feishuAnswer = await visibleQuestion(
     rl,
@@ -128,13 +131,14 @@ try {
     OPENVIKING_CLI: openVikingCli,
     OPENVIKING_CLI_CONFIG: openVikingCliConfig,
     OPENVIKING_AGENT_ID: openVikingAgentId,
-    SUPABASE_API_URL: supabaseApiUrl,
-    SUPABASE_SERVICE_ROLE_KEY: supabaseServiceRole,
-    APP_WORKSPACE_ID: appWorkspaceId,
-    SUPABASE_WORKSPACE_ID: cloudWorkspaceId,
-    SUPABASE_BRANCH_ID: branchId,
-    VOLCENGINE_ACCESS_KEY: volcAccessKey,
-    VOLCENGINE_SECRET_KEY: volcSecretKey,
+    SUPABASE_API_URL: existing.SUPABASE_API_URL || "",
+    SUPABASE_SERVICE_ROLE_KEY: existing.SUPABASE_SERVICE_ROLE_KEY || "",
+    APP_WORKSPACE_ID: existing.APP_WORKSPACE_ID || "",
+    SUPABASE_WORKSPACE_ID: existing.SUPABASE_WORKSPACE_ID || "",
+    SUPABASE_BRANCH_ID: existing.SUPABASE_BRANCH_ID || "",
+    SUPABASE_CLI_PROFILE: existing.SUPABASE_CLI_PROFILE || "current",
+    VOLCENGINE_ACCESS_KEY: existing.VOLCENGINE_ACCESS_KEY || "",
+    VOLCENGINE_SECRET_KEY: existing.VOLCENGINE_SECRET_KEY || "",
     FEISHU_CLI_IMPORT_ENABLED: /^true|1|yes$/i.test(feishuAnswer) ? "true" : "false",
     FEISHU_SYNC_ENABLED: /^true|1|yes$/i.test(feishuAnswer) ? "true" : "false",
     VISION_API_KEY: "",

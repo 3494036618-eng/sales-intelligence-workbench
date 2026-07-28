@@ -149,7 +149,7 @@ function nextAction(stages, context) {
       command: `node ${paths.skillRoot}/scripts/install.mjs`,
     },
     agent_plan: {
-      reason: "模型、DataPro、豆包搜索和 OpenViking 必须使用真实 Agent Plan 配置。",
+      reason: "模型、DataPro、豆包搜索、视觉模型和 OpenViking 控制面必须使用真实 Agent Plan 配置。",
       command: `node ${paths.skillRoot}/scripts/configure.mjs`,
     },
     supabase: {
@@ -157,8 +157,8 @@ function nextAction(stages, context) {
       command: `node ${paths.skillRoot}/scripts/setup-supabase.mjs`,
     },
     openviking: {
-      reason: "历史资料和长期记忆必须连接真实 OpenViking 数据面。",
-      command: `node ${paths.skillRoot}/scripts/configure.mjs`,
+      reason: "历史资料和长期记忆需要初始化 Agent Plan OpenViking 记忆库；内部连接信息由脚本自动管理。",
+      command: `node ${paths.skillRoot}/scripts/setup-openviking.mjs`,
     },
     feishu_cli: {
       reason: "已选择飞书资料来源，需要安装并授权用户态 lark-cli，同时启用飞书 CLI 导入。",
@@ -215,7 +215,9 @@ async function buildReport() {
     stage("supabase", "连接 Agent Plan Supabase", summary.supabase_data_api && configuration.SUPABASE_WORKSPACE_ID ? "complete" : "pending",
       summary.supabase_data_api ? "Data API 已配置" : "尚未完成 Agent Plan Workspace 初始化"),
     stage("openviking", "连接 OpenViking", summary.openviking ? "complete" : "pending",
-      summary.openviking ? "数据面连接已配置" : "尚未配置 OpenViking 数据面"),
+      summary.openviking
+        ? `Agent Plan 记忆库已连接${configuration.OPENVIKING_COLLECTION_NAME ? `：${configuration.OPENVIKING_COLLECTION_NAME}` : ""}`
+        : "尚未初始化 Agent Plan 记忆库；无需输入其他 Key"),
     stage("feishu_cli", "准备飞书资料读取", !wantsFeishu ? "skipped" : summary.feishu_sync && larkCliAvailable ? "complete" : "pending",
       !wantsFeishu ? "当前业务范围未选择飞书资料" : summary.feishu_sync && larkCliAvailable ? "lark-cli 已发现，授权状态需在首次读取时确认" : "飞书 CLI 导入未启用或找不到 lark-cli"),
     stage("live_doctor", "验证真实数据面", doctor.fresh ? "complete" : "pending",

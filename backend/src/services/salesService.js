@@ -1660,7 +1660,7 @@ export class SalesService {
   }
 
   async listProviderRuns(filters = {}) {
-    return this.providerRuns.list(filters);
+    return (await this.providerRuns.list(filters)).map((run) => this.publicProviderRun(run));
   }
 
   async getProviderRun(runId) {
@@ -1670,7 +1670,38 @@ export class SalesService {
         provider_run_id: runId,
       });
     }
-    return run;
+    return this.publicProviderRun(run);
+  }
+
+  publicProviderRun(run) {
+    return {
+      id: run.id,
+      operation: run.operation,
+      status: run.status,
+      app_mode: run.app_mode,
+      entity_type: run.entity_type || "",
+      entity_id: run.entity_id || "",
+      job_id: run.job_id || null,
+      started_at: run.started_at || null,
+      finished_at: run.finished_at || null,
+      duration_ms: run.duration_ms ?? null,
+      error: run.error ? clone(run.error) : null,
+      steps: firstJsonArray(run.steps).map((step) => ({
+        id: step.id,
+        sequence: step.sequence,
+        provider: step.provider,
+        operation: step.operation,
+        status: step.status,
+        input_summary: step.input_summary || "",
+        output_summary: step.output_summary || "",
+        usage: step.usage ? clone(step.usage) : null,
+        attempts: step.attempts,
+        started_at: step.started_at || null,
+        finished_at: step.finished_at || null,
+        latency_ms: step.latency_ms ?? null,
+        error: step.error ? clone(step.error) : null,
+      })),
+    };
   }
 
   async requireJob(jobId, options = {}) {

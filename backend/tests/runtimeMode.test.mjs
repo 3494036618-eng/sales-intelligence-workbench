@@ -82,6 +82,7 @@ test("fully configured production policy is structurally ready", () => {
       WEB_SEARCH_RUN_ENABLED: "true",
       MODEL_RUN_ENABLED: "true",
       OPENVIKING_BASE_URL: "https://openviking.example.test",
+      OPENVIKING_API_KEY: "test-openviking-key",
       OPENVIKING_RUN_ENABLED: "true",
     }),
   });
@@ -176,6 +177,7 @@ test("proxied production requires secure cookies and matching HTTPS auth origins
     WEB_SEARCH_RUN_ENABLED: "true",
     MODEL_RUN_ENABLED: "true",
     OPENVIKING_BASE_URL: "https://openviking.example.test",
+    OPENVIKING_API_KEY: "test-openviking-key",
     OPENVIKING_RUN_ENABLED: "true",
     TRUST_PROXY: "true",
   };

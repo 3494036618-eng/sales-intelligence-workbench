@@ -8,11 +8,15 @@ import { fileURLToPath } from "node:url";
 const scriptsDir = path.dirname(fileURLToPath(import.meta.url));
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "sales-workbench-skill-"));
 const fixtureEnv = path.join(tempRoot, "fixture.env");
+const fakeOpenVikingCli = path.join(tempRoot, "fake-openviking-control-plane.mjs");
+const fakeOpenVikingApiKey = "test-internal-openviking-key";
 const isolatedEnv = {
   ...process.env,
+  HOME: path.join(tempRoot, "home"),
   SALES_WORKBENCH_HOME: path.join(tempRoot, "share"),
   SALES_WORKBENCH_CONFIG_HOME: path.join(tempRoot, "config"),
   SALES_WORKBENCH_STATE_HOME: path.join(tempRoot, "state"),
+  OPENVIKING_CONTROL_PLANE_CLI: fakeOpenVikingCli,
 };
 
 function runScript(name, args = [], { expectSuccess = true } = {}) {
@@ -28,9 +32,39 @@ function runScript(name, args = [], { expectSuccess = true } = {}) {
 }
 
 try {
+  fs.mkdirSync(isolatedEnv.HOME, { recursive: true });
+  fs.writeFileSync(fakeOpenVikingCli, `#!/usr/bin/env node
+const command = process.argv[2];
+if (process.env.AGENTPLAN_API_KEY !== "test-agent-plan-key") process.exit(3);
+if (command === "list") {
+  process.stdout.write(JSON.stringify([
+    { Name: "sales_memory", ResourceID: "ov-self-test", Status: "READY" },
+  ]));
+} else if (command === "get") {
+  process.stdout.write(JSON.stringify({
+    Name: "sales_memory",
+    ResourceID: "ov-self-test",
+    Status: "READY",
+  }));
+} else if (command === "api-key") {
+  process.stdout.write(JSON.stringify({
+    UserID: "default",
+    Role: "admin",
+    ApiKey: "${fakeOpenVikingApiKey}",
+  }));
+} else if (command === "create") {
+  process.stdout.write(JSON.stringify({
+    Name: "sales_memory",
+    ResourceID: "ov-self-test",
+    Status: "READY",
+  }));
+} else {
+  process.stderr.write("unsupported command");
+  process.exit(2);
+}
+`, { mode: 0o700 });
   fs.writeFileSync(fixtureEnv, [
     "AGENT_PLAN_API_KEY=test-agent-plan-key",
-    "OPENVIKING_BASE_URL=https://openviking.invalid",
     "VOLCENGINE_ACCESS_KEY=test-access-key",
     "VOLCENGINE_SECRET_KEY=test-secret-key",
     "SUPABASE_WORKSPACE_ID=test-cloud-workspace",
@@ -56,8 +90,42 @@ try {
 
   runScript("install.mjs");
   runScript("configure.mjs", ["--from-env-file", fixtureEnv, "--mode", "production"]);
-  const runtimeConfig = fs.readFileSync(path.join(isolatedEnv.SALES_WORKBENCH_CONFIG_HOME, "runtime.env"), "utf8");
+  const configureSource = fs.readFileSync(path.join(scriptsDir, "configure.mjs"), "utf8");
+  assert.doesNotMatch(configureSource, /OpenViking 数据面 API Key|OpenViking 专用 API Key/);
+  assert.doesNotMatch(configureSource, /hiddenQuestion\(rl, output, "Supabase Service Role Key"/);
+  assert.doesNotMatch(configureSource, /hiddenQuestion\(rl, output, "火山 (?:Access|Secret) Key/);
+  assert.doesNotMatch(configureSource, /visibleQuestion\(rl, "Supabase Data API URL"/);
+  let runtimeConfig = fs.readFileSync(path.join(isolatedEnv.SALES_WORKBENCH_CONFIG_HOME, "runtime.env"), "utf8");
   assert.match(runtimeConfig, /APP_WORKSPACE_ID="[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"/i);
+
+  const openVikingPlan = runScript("setup-openviking.mjs");
+  assert.match(openVikingPlan.stdout, /sales_memory/);
+  assert.match(openVikingPlan.stdout, /ov-self-test/);
+  assert.match(openVikingPlan.stdout, /--apply --resource-id ov-self-test/);
+  assert.doesNotMatch(openVikingPlan.stdout + openVikingPlan.stderr, new RegExp(fakeOpenVikingApiKey));
+
+  const openVikingApply = runScript("setup-openviking.mjs", [
+    "--apply",
+    "--resource-id", "ov-self-test",
+  ]);
+  assert.match(openVikingApply.stdout, /用户侧仍只使用 Agent Plan Key/);
+  assert.doesNotMatch(openVikingApply.stdout + openVikingApply.stderr, new RegExp(fakeOpenVikingApiKey));
+  const credentialsPath = path.join(isolatedEnv.SALES_WORKBENCH_CONFIG_HOME, "credentials.env");
+  const credentialsConfig = fs.readFileSync(credentialsPath, "utf8");
+  assert.match(credentialsConfig, new RegExp(fakeOpenVikingApiKey));
+  assert.equal(fs.statSync(credentialsPath).mode & 0o777, 0o600);
+  runtimeConfig = fs.readFileSync(path.join(isolatedEnv.SALES_WORKBENCH_CONFIG_HOME, "runtime.env"), "utf8");
+  assert.match(runtimeConfig, /OPENVIKING_RESOURCE_ID="ov-self-test"/);
+  assert.match(runtimeConfig, /OPENVIKING_COLLECTION_NAME="sales_memory"/);
+  assert.match(runtimeConfig, /OPENVIKING_BASE_URL="https:\/\/api\.vikingdb\.cn-beijing\.volces\.com\/openviking"/);
+
+  const realChainHelp = runScript("verify-real-chain.mjs", ["--help"]);
+  assert.match(realChainHelp.stdout, /查看本帮助不会发起任何 Provider 请求/);
+  assert.equal(
+    fs.existsSync(path.join(isolatedEnv.SALES_WORKBENCH_STATE_HOME, "doctor-live.json")),
+    false,
+  );
+
   const supabasePlan = runScript("setup-supabase.mjs");
   assert.match(supabasePlan.stdout, /当前未写入/);
   assert.match(supabasePlan.stdout, /不会创建、暂停或删除云 Workspace/);
@@ -86,7 +154,7 @@ try {
   assert.equal(parsedStatus.configuration.app_mode, "development");
 
   runScript("uninstall.mjs", ["--purge", "--yes"]);
-  process.stdout.write("Skill Builder 隔离自测通过：业务范围、阶段判断、安装、配置、doctor、生产降级启动、开发预检、状态和卸载均符合预期。\n");
+  process.stdout.write("Skill Builder 隔离自测通过：单 Agent Plan Key、OpenViking 与 Supabase 内部凭据不要求用户输入、业务范围、阶段判断、安装、配置、doctor、生产降级启动、开发预检、状态和卸载均符合预期。\n");
 } finally {
   fs.rmSync(tempRoot, { recursive: true, force: true });
 }

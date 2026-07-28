@@ -139,7 +139,7 @@ export function createRuntimePolicy(options = {}) {
     const openVikingCliConfig = env.value("OPENVIKING_CLI_CONFIG")
       || (process.env.HOME ? join(process.env.HOME, ".openviking", "ovcli.conf") : "");
     const openVikingConfigured = (
-      env.hasAny(["OPENVIKING_API_KEY", "OPENVIKING_BEARER_TOKEN", "AGENT_PLAN_API_KEY"])
+      env.hasAny(["OPENVIKING_API_KEY", "OPENVIKING_BEARER_TOKEN"])
       && env.hasAny(["OPENVIKING_BASE_URL"])
     )
       || Boolean(openVikingCliConfig && existsSync(openVikingCliConfig))

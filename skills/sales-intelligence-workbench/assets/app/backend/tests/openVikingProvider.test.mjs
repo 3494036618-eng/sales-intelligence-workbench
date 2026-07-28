@@ -241,3 +241,15 @@ test("local ovcli config supplies HTTP URL, API key and agent identity", () => {
   assert.equal(provider.agentId, "local-agent");
   assert.equal(provider.isConfigured(), true);
 });
+
+test("Agent Plan key is not reused as OpenViking data-plane authentication", () => {
+  const provider = new OpenVikingProvider({
+    env: envReader({
+      AGENT_PLAN_API_KEY: "agent-plan-key",
+      OPENVIKING_BASE_URL: "https://api.vikingdb.cn-beijing.volces.com/openviking",
+    }),
+    cliConfig: {},
+  });
+
+  assert.equal(provider.apiKey, "");
+});

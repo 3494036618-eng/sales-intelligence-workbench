@@ -308,6 +308,19 @@ function assertProviderRun(run, expectedProviders, label) {
   }
 }
 
+function assertDossierPersistenceBoundary(run) {
+  const step = (run?.steps || []).find((candidate) => (
+    candidate.provider === "openviking"
+    && candidate.operation === "store_dossier_memory"
+  ));
+  if (!step) {
+    throw new Error("最新档案缺少 OpenViking 存储边界证据。");
+  }
+  if (step.status !== "skipped" || !/Supabase/.test(String(step.output_summary || ""))) {
+    throw new Error("最新档案未遵守 Supabase 持久化、OpenViking 不重复存档的边界。");
+  }
+}
+
 function providerRunSummary(run) {
   return {
     id: run.id,
@@ -436,7 +449,8 @@ async function main() {
     jobId: dossierJob?.id || dossierResponse?.job_id || "",
     startedAfter: dossierStartedAt,
   });
-  assertProviderRun(dossierRun, ["datapro", "web_search", "openviking", "model", "supabase"], "最新档案");
+  assertProviderRun(dossierRun, ["datapro", "web_search", "model", "supabase"], "最新档案");
+  assertDossierPersistenceBoundary(dossierRun);
   runs.push(dossierRun);
 
   const qaResult = await apiRequest(
@@ -486,6 +500,7 @@ async function main() {
 
 export {
   apiRequest,
+  assertDossierPersistenceBoundary,
   assertProviderRun,
   collectPrivatePaths,
   findProviderRun,

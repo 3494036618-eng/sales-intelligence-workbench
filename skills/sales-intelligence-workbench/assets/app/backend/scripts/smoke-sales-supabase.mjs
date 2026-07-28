@@ -153,14 +153,6 @@ try {
     summary: "OpenViking 引用字段持久化测试。",
     created_at: now,
   });
-  repoA.persistSalesQaMessage(companyA, {
-    id: `s2_${suffix}_qa`,
-    role: "assistant",
-    text: "Stage 2 问答持久化测试。",
-    provider_run_id: run.id,
-    created_at: now,
-  });
-
   const stateA = repoA.getSalesState(emptySeed);
   const stateB = repoB.getSalesState(emptySeed);
   const persistedStore = new ProviderRunStore({ repository: repoA, failOnPersistenceError: true });
@@ -203,7 +195,7 @@ try {
     ok: true,
     test_run: suffix,
     verified: {
-    migrations_required: "202607210006",
+      migrations_required: "202607280002",
       create_read_update_soft_delete: true,
       duplicate_target_prevented: true,
       cross_tenant_same_name_supported: true,
