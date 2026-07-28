@@ -12,6 +12,7 @@ import {
   buildQaEnumerationRequirements,
   buildQaEvidence,
   evidencePackCitations,
+  fuseQaRetrievalContexts,
   makeDossierFingerprint,
   validateDossierModelAnswer,
   validateProductionEvidencePack,
@@ -3271,7 +3272,7 @@ export class SalesService {
     }
     try {
       const result = await this.openVikingProvider.findMemories(query, {
-        limit: 5,
+        limit: 8,
         uri: this.openVikingMaterialsUri(company),
       });
       if (!result.ok) {
@@ -3331,9 +3332,12 @@ export class SalesService {
       })
       .filter((item) => item?.abstract)
       .filter((context, index, contexts) => (
-        contexts.findIndex((candidate) => candidate.material_id === context.material_id) === index
+        contexts.findIndex((candidate) => (
+          canonicalOpenVikingResourceUri(candidate.uri)
+            === canonicalOpenVikingResourceUri(context.uri)
+        )) === index
       ))
-      .slice(0, 6);
+      .slice(0, 8);
   }
 
   async hydrateOpenVikingContexts(company, contexts = []) {
@@ -3487,12 +3491,33 @@ export class SalesService {
       "注册资本、营收、净利润、融资、估值及明确的司法/处罚/失信事实属于高风险事实，至少引用两个独立外部来源，且至少一个必须是专业或官方来源。",
       "关键数字只有在两个独立来源返回同一数值时才可写成确定事实；若 evidence_conflicts 标记冲突，必须静默省略该数字，改写为其他有一致证据支持的实质事实，不得列出多个口径，也不得向前端解释冲突。",
     ];
-    const callDossierModel = ({ operation, task, invalidAnswer = null, validationErrors = [] }) => (
+    const callDossierModel = ({
+      operation,
+      task,
+      maxTokens = 2800,
+      jsonRetry = false,
+      jsonRepairContent = "",
+      invalidAnswer = null,
+      validationErrors = [],
+    }) => (
       this.modelProvider.callJson({
         operation,
-        maxTokens: 2800,
+        maxTokens,
         system: [
           ...modelInstructions,
+          ...(jsonRetry
+            ? [
+              "上一轮响应因 JSON 未完整闭合而无法解析。本轮必须返回完整 JSON。",
+              "缩短各章节表述，完整闭合所有字符串、数组和对象；不得输出 JSON 之外的任何文字。",
+            ]
+            : []),
+          ...(jsonRepairContent
+            ? [
+              "你正在修复上一轮模型生成的无效 JSON。只修复 JSON 语法、闭合和转义问题，不得新增、删除或改写事实。",
+              "必须完整保留六个固定章节及其原有 citation_ids；引用仍须来自 allowed_citation_ids。",
+              "只输出修复后的完整 JSON，不得解释修复过程。",
+            ]
+            : []),
           ...(invalidAnswer
             ? [
               "你正在修复一份未通过证据校验的档案。只修复结构、表述和引用，不得增加任何输入证据之外的事实。",
@@ -3514,6 +3539,9 @@ export class SalesService {
           evidence_conflicts: collected.conflicts || [],
           source_selection_policy: sourceSelectionPolicy,
           output_schema: outputSchema,
+          ...(jsonRepairContent ? {
+            invalid_json_content: jsonRepairContent,
+          } : {}),
           ...(invalidAnswer ? {
             invalid_answer: invalidAnswer,
             validation_errors: validationErrors,
@@ -3531,6 +3559,35 @@ export class SalesService {
         operation: "sales_dossier",
         task: "生成企业最近档案",
       }));
+      if (!result.ok && result.error?.code === "invalid_json") {
+        const invalidContent = String(result.invalid_content || "").trim();
+        if (invalidContent) {
+          result = await this.trackProviderStep(providerRunId, {
+            provider: "model",
+            operation: "repair_sales_dossier_json",
+            input_summary: `修复 ${company.name} 首次档案响应的 JSON 语法`,
+            output_summary: "模型已修复并返回完整结构化档案结果。",
+          }, () => callDossierModel({
+            operation: "sales_dossier_json_repair",
+            task: "修复企业最近档案的 JSON 语法",
+            maxTokens: 3600,
+            jsonRepairContent: invalidContent,
+          }));
+        }
+      }
+      if (!result.ok && result.error?.code === "invalid_json") {
+        result = await this.trackProviderStep(providerRunId, {
+          provider: "model",
+          operation: "retry_sales_dossier",
+          input_summary: `首次档案 JSON 未完整闭合，使用更高输出预算重试 ${company.name} 最近档案`,
+          output_summary: "模型重试后已返回完整结构化档案结果。",
+        }, () => callDossierModel({
+          operation: "sales_dossier_retry",
+          task: "重新生成因 JSON 未完整闭合而失败的企业最近档案",
+          maxTokens: 3600,
+          jsonRetry: true,
+        }));
+      }
       if (!result.ok) {
         if (this.runtimePolicy.fail_closed) {
           throw providerUnavailable("model", "The model did not return a valid dossier result.", {
@@ -5264,18 +5321,17 @@ export class SalesService {
         input_summary: `仅在 ${company.name} 的飞书资料目录中执行多查询检索并读取命中原文`,
       }, async () => {
         const queries = qaRetrievalQueries(company, question, conversationHistory);
-        const recalled = [];
+        const queryResults = [];
         for (const query of queries) {
-          recalled.push(...await this.searchOpenViking(company, query));
+          queryResults.push({
+            query,
+            contexts: await this.searchOpenViking(company, query),
+          });
         }
-        const matchedContexts = recalled
-          .filter((context, index, values) => {
-            const identity = context.material_id || context.uri || context.title;
-            return identity && values.findIndex((item) => (
-              item.material_id || item.uri || item.title
-            ) === identity) === index;
-          })
-          .slice(0, 8);
+        const matchedContexts = fuseQaRetrievalContexts(queryResults, {
+          maxContexts: 10,
+          maxPerMaterial: 2,
+        });
         const contexts = await this.hydrateOpenVikingContexts(company, matchedContexts);
         return {
           ok: true,
@@ -5283,7 +5339,14 @@ export class SalesService {
           provider_mode: this.openVikingProvider?.isConfigured?.() ? "real" : "fallback",
           contexts,
           query_plan: queries,
-          summary: `已执行 ${queries.length} 个检索查询，召回并读取 ${contexts.length} 份企业范围内资料。`,
+          retrieval_trace: matchedContexts.map((context) => ({
+            material_id: context.material_id,
+            uri: context.uri,
+            query_hits: context.query_hits,
+            best_rank: context.best_rank,
+            fusion_score: context.fusion_score,
+          })),
+          summary: `已执行 ${queries.length} 个检索查询，经融合排序后读取 ${contexts.length} 份企业范围内资料。`,
         };
       });
       await this.assertJobActive(job.id);
@@ -5414,6 +5477,11 @@ export class SalesService {
               message: error.message || "Question answering failed.",
               category: error.category || "workflow",
               retryable: error.retryable,
+              details: {
+                validation_errors: safeValidationErrors(
+                  error.details?.validation_errors || error.validation_errors,
+                ),
+              },
             });
           }
         } catch (persistenceError) {
@@ -5466,6 +5534,7 @@ export class SalesService {
           "conversation_memory 是 OpenViking 从更早会话中提炼的长期摘要，只能用于保持对话连续性，不能单独作为事实证据。",
           "不能自由联网，不能补编资料。资料不足时明确说不足。",
           "retrieval_plan 说明问题类型和检索支持度；先直接回答问题，再给依据或下一步，不要介绍系统如何检索、调用了什么能力或资料条数。",
+          "严格围绕用户明确要求的对象和分项作答；不得自行增加“补充”“延伸信息”“其他说明”等未被提问的旁支内容。只有资料不足会影响结论时，才说明缺口或下一步。",
           "当 retrieval_plan.answerability.supported=false 时，只有 evidence 原文明确包含答案才能回答；否则 insufficient 必须为 true，并简洁说明缺少哪类资料。",
           "evidence.label 是资料的正式展示标题，询问标题或来源时必须逐字使用 label，不得根据正文另拟标题。",
           "不得输出 evidence.uri、内部路径、资源 ID、公司内部 ID 或其他技术实现细节。",
@@ -5497,7 +5566,8 @@ export class SalesService {
           operation,
           maxTokens,
           jsonRetry = false,
-          qualityFeedback = [],
+          jsonRepairContent = "",
+          validationFeedback = [],
         }) => this.modelProvider.callJson({
           operation,
           maxTokens,
@@ -5509,15 +5579,25 @@ export class SalesService {
                 "最多输出 4 个段落，每段不超过 180 个中文字符；不得省略 citation_ids 和 insufficient。",
               ]
               : []),
-            ...(qualityFeedback.length
+            ...(jsonRepairContent
               ? [
-                "上一轮回答未通过枚举完整性检查。必须按 enumeration_requirements 补齐遗漏项后重新输出完整 JSON。",
+                "你正在修复上一轮模型生成的无效 JSON。只修复 JSON 语法、闭合和转义问题，不得新增、删除或改写回答事实。",
+                "必须保留原回答段落、citation_ids 和 insufficient；引用仍须来自 evidence[].id。",
+                "只输出修复后的完整 JSON，不得解释修复过程。",
+              ]
+              : []),
+            ...(validationFeedback.length
+              ? [
+                "上一轮回答未通过结构与引用校验。本轮必须根据 validation_feedback 逐项修正后重新输出完整 JSON。",
+                "每个非资料不足段落都必须给出 citation_ids，并且只能逐字复制 evidence[].id；不得使用来源序号、标题或自行编造的 ID。",
+                "如果 validation_feedback 指出遗漏枚举项，必须按 enumeration_requirements 逐项补齐。",
               ]
               : []),
           ].join("\n"),
           payload: {
             ...qaPayload,
-            ...(qualityFeedback.length ? { quality_feedback: qualityFeedback } : {}),
+            ...(jsonRepairContent ? { invalid_json_content: jsonRepairContent } : {}),
+            ...(validationFeedback.length ? { validation_feedback: validationFeedback } : {}),
           },
         });
         let result = await this.trackProviderStep(providerRunId, {
@@ -5529,6 +5609,21 @@ export class SalesService {
           operation: "sales_qa",
           maxTokens: 1600,
         }));
+        if (!result.ok && result.error?.code === "invalid_json") {
+          const invalidContent = String(result.invalid_content || "").trim();
+          if (invalidContent) {
+            result = await this.trackProviderStep(providerRunId, {
+              provider: "model",
+              operation: "repair_sales_question_json",
+              input_summary: `修复 ${company.name} 首次问答响应的 JSON 语法`,
+              output_summary: "模型已修复并返回完整结构化回答。",
+            }, () => callQaModel({
+              operation: "sales_qa_json_repair",
+              maxTokens: 2200,
+              jsonRepairContent: invalidContent,
+            }));
+          }
+        }
         if (!result.ok && result.error?.code === "invalid_json") {
           result = await this.trackProviderStep(providerRunId, {
             provider: "model",
@@ -5544,18 +5639,17 @@ export class SalesService {
         let validated = result.ok
           ? validateQaModelAnswer(result.parsed, allowedEvidence, { enumerationRequirements })
           : null;
-        const enumerationErrors = (validated?.errors || [])
-          .filter((item) => item.startsWith("回答遗漏枚举项："));
-        if (result.ok && enumerationErrors.length) {
+        const validationErrors = validated?.errors || [];
+        if (result.ok && validationErrors.length) {
           result = await this.trackProviderStep(providerRunId, {
             provider: "model",
-            operation: "retry_incomplete_enumeration",
-            input_summary: `首次回答遗漏资料中的明确枚举项，重试 ${company.name} 的资料问题`,
-            output_summary: "模型重试后已返回覆盖完整枚举项的结构化回答。",
+            operation: "retry_invalid_qa_answer",
+            input_summary: `首次回答未通过结构或引用校验，重试 ${company.name} 的资料问题`,
+            output_summary: "模型重试后已返回修正引用与结构的回答。",
           }, () => callQaModel({
             operation: "sales_qa_quality_retry",
             maxTokens: 2200,
-            qualityFeedback: enumerationErrors,
+            validationFeedback: validationErrors,
           }));
           validated = result.ok
             ? validateQaModelAnswer(result.parsed, allowedEvidence, { enumerationRequirements })

@@ -55,6 +55,12 @@ test("formal frontend still exposes the complete sales workflow", () => {
   assert.doesNotMatch(appSource, /function historicalDossierRecords\(item\) \{[\s\S]*?\.slice\(1\)\.map/);
   assert.match(appSource, /暂无历史档案/);
   assert.match(appSource, /资料问答/);
+  assert.match(appSource, /class="support-tabs" role="tablist" aria-label="企业资料与问答"/);
+  assert.match(appSource, /data-support-view="library"[\s\S]*?role="tab"[\s\S]*?>历史资料<\/button>/);
+  assert.match(appSource, /data-support-view="qa"[\s\S]*?role="tab"[\s\S]*?>资料问答<\/button>/);
+  assert.match(appSource, /id="supportLibraryPanel"[\s\S]*?role="tabpanel"/);
+  assert.match(appSource, /id="supportQaPanel"[\s\S]*?role="tabpanel"/);
+  assert.match(appSource, /state\.supportView = nextView;/);
   assert.match(appSource, /仅根据当前企业档案和用户导入的飞书资料回答/);
   assert.match(appSource, /paragraphs: \(message\.paragraphs \|\| \[\]\)/);
   assert.match(appSource, /class="qa-answer-body"/);
@@ -111,6 +117,10 @@ test("dossier versions and citations use API evidence only in formal mode", () =
 test("formal frontend has retryable connection and request-trace errors", () => {
   assert.match(appSource, /error\.requestId = payload\.meta\?\.request_id \|\| ""/);
   assert.match(appSource, /const requestId = error\?\.requestId \? `（请求 \$\{error\.requestId\}）` : ""/);
+  assert.match(
+    appSource,
+    /catch \(error\) \{\s*state\.showNewGoal = false;\s*state\.sidebarNotice = apiErrorMessage\(error, "暂时没能创建销售目标，请稍后再试。"\)/,
+  );
   assert.match(appSource, /id="retryBoot"/);
   assert.match(appSource, /\$\("#retryBoot"\)\?\.addEventListener\("click"/);
   assert.match(appSource, /后端响应超时，请检查 API 服务和运行模式配置/);

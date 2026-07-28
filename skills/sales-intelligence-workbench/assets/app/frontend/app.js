@@ -263,6 +263,7 @@
     selectedDossierId: "qichen-dossier-001",
     targetStatusFilter: "全部",
     materialFilter: "全部",
+    supportView: "library",
     query: "",
     hasSearched: false,
     showNewGoal: false,
@@ -431,6 +432,7 @@
     state.query = "";
     state.hasSearched = false;
     state.materialFilter = "全部";
+    state.supportView = "library";
     state.targetStatusFilter = "全部";
     state.qaMessagesByCompany = {
       shanghaiAuto: yaochiQaMessages(),
@@ -1496,10 +1498,47 @@
   }
 
   function renderSupportArea(item) {
+    const libraryActive = state.supportView !== "qa";
     return `
       <section class="support-grid">
-        ${renderLibrary(item)}
-        ${renderQa(item)}
+        <div class="support-tabs" role="tablist" aria-label="企业资料与问答">
+          <button
+            id="supportTabLibrary"
+            class="${libraryActive ? "is-active" : ""}"
+            data-support-view="library"
+            type="button"
+            role="tab"
+            aria-selected="${libraryActive}"
+            aria-controls="supportLibraryPanel"
+          >历史资料</button>
+          <button
+            id="supportTabQa"
+            class="${libraryActive ? "" : "is-active"}"
+            data-support-view="qa"
+            type="button"
+            role="tab"
+            aria-selected="${!libraryActive}"
+            aria-controls="supportQaPanel"
+          >资料问答</button>
+        </div>
+        <div
+          id="supportLibraryPanel"
+          class="support-tab-panel"
+          role="tabpanel"
+          aria-labelledby="supportTabLibrary"
+          ${libraryActive ? "" : "hidden"}
+        >
+          ${renderLibrary(item)}
+        </div>
+        <div
+          id="supportQaPanel"
+          class="support-tab-panel"
+          role="tabpanel"
+          aria-labelledby="supportTabQa"
+          ${libraryActive ? "hidden" : ""}
+        >
+          ${renderQa(item)}
+        </div>
       </section>
     `;
   }
@@ -1620,16 +1659,20 @@
     });
     return `
       <section class="library-panel">
-        <div class="support-heading">
-          <h2>历史资料 <span>${allRecords.length}</span></h2>
-          <div class="library-tools">
-            ${!DEMO_MODE ? `<button class="secondary-button library-import-button" id="openFeishuImport" type="button" ${state.busy ? "disabled" : ""}>导入飞书资料</button>` : ""}
+        <div class="support-heading library-heading">
+          <div class="library-heading-row">
+            <h2>历史资料 <span>${allRecords.length}</span></h2>
+          </div>
+          <div class="library-control-row">
             <div class="filter-row material-filter" aria-label="历史资料筛选">
               ${MATERIAL_FILTERS.map((type) => `
                 <button class="${state.materialFilter === type ? "is-active" : ""}" data-material-filter="${escapeHtml(type)}" type="button">
                   ${escapeHtml(type)}
                 </button>
               `).join("")}
+            </div>
+            <div class="library-tools">
+              ${!DEMO_MODE ? `<button class="secondary-button library-import-button" id="openFeishuImport" type="button" ${state.busy ? "disabled" : ""}>导入飞书资料</button>` : ""}
             </div>
           </div>
         </div>
@@ -2058,9 +2101,9 @@
         state.activeCompanyId = "";
         state.showNewGoal = false;
         state.notice = "已新增销售目标";
-      } catch {
+      } catch (error) {
         state.showNewGoal = false;
-        state.sidebarNotice = "暂时没能创建销售目标，请稍后再试。";
+        state.sidebarNotice = apiErrorMessage(error, "暂时没能创建销售目标，请稍后再试。");
       } finally {
         state.busy = "";
       }
@@ -2239,6 +2282,16 @@
         if (state.busy) return;
         state.materialFilter = button.dataset.materialFilter;
         render();
+      });
+    });
+
+    $$("[data-support-view]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const nextView = button.dataset.supportView;
+        if (!["library", "qa"].includes(nextView) || state.supportView === nextView) return;
+        state.supportView = nextView;
+        render();
+        if (nextView === "qa") scrollQaToBottom();
       });
     });
 

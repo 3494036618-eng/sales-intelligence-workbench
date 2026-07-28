@@ -7,6 +7,35 @@ description: 从 0 到 1 搭建、配置、验收和维护真实数据驱动的�
 
 这是一个 Builder Skill：先理解用户的销售目标，再安装经过测试的完整前后端模板，连接用户自己的 Agent Plan、Supabase、OpenViking 和资料来源，最后用真实业务闭环验收。不得用演示企业、固定报告、Mock Provider 或静态来源冒充真实链路。
 
+## 远程 Skill 入口
+
+用户可能直接通过公开的主 Skill URL 触发本流程，而不是预先克隆仓库、安装 Skill 或准备
+本机配置。正式口令采用以下形式，并固定到不可变的 release tag 或 commit：
+
+```text
+帮我初始化销售助手：https://github.com/<owner>/<repo>/blob/<ref>/skills/sales-intelligence-workbench/SKILL.md
+```
+
+如果当前环境中不存在 `{baseDir}/scripts/status.mjs`，说明本 Skill 是从远程 URL 打开的。
+此时 Agent 必须：
+
+1. 从用户提供的 Skill URL 解析同一个 GitHub 仓库和 `<ref>`，取得该版本的完整仓库，不能
+   只下载 `SKILL.md`，也不能通过搜索结果猜测同名仓库。
+2. 将 `{baseDir}` 设为仓库中的 `skills/sales-intelligence-workbench`，确认
+   `{baseDir}/scripts/`、`{baseDir}/references/`、`{baseDir}/assets/app/` 及仓库根目录
+   `package.json` 均存在。
+3. 在仓库根目录执行 `node scripts/validate-skill-package.mjs` 和
+   `node scripts/test-skill-installer.mjs`。两项都通过后执行 `npm run skill:install`；
+   已安装旧版时先说明影响，再使用 `npm run skill:install -- --force`。
+4. 立即使用刚取得仓库中的本文件继续阶段 0，不要求用户重启 Codex，也不让用户重复提供
+   源码目录。
+5. 已有同名目录时先核对 Git remote、版本和工作区状态；不覆盖用户改动，不创建第二套
+   运行时。下载、校验和安装阶段不创建云资源、不调用模型或 Harness、不产生 AFP。
+
+“什么也没配置”表示用户不需要预先准备本地项目、依赖或配置文件，不代表可以绕过云服务
+账号、Agent Plan 套餐、Supabase/OpenViking 权限、飞书登录或真实调用费用。Agent 必须在
+对应阶段解释并引导完成这些必要授权。
+
 ## 执行原则
 
 - 每完成一步，说明刚做了什么、为什么做、当前阶段、下一步和是否产生外部调用或费用。

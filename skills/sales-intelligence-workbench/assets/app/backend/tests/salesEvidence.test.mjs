@@ -299,6 +299,31 @@ test("QA evidence ranks the complete capability table above title-only noise", (
   assert.ok(incomplete.errors.some((item) => item.includes("回答遗漏枚举项")));
 });
 
+test("QA enumeration completeness ignores unrelated tables for compare-style questions", () => {
+  const evidence = [{
+    id: "evidence_trace_span",
+    label: "全链路数据体系建设研讨会",
+    source_kind: "飞书云文档",
+    retrieval_score: 0.99,
+    summary: [
+      "Trace 通过唯一 Trace ID 串联一次完整调用，每个执行节点对应一个 Span。",
+      "| 阶段 | 说明 |",
+      "|-|-|",
+      "| 接入 | 完成数据接入 |",
+      "| 路由 | 完成请求路由 |",
+      "| 调用 | 完成模型调用 |",
+      "| 验收 | 完成效果验收 |",
+    ].join(" "),
+  }];
+
+  const requirements = buildQaEnumerationRequirements(
+    "Trace 和 Span 分别承担什么作用？请用三点说明。",
+    evidence,
+  );
+
+  assert.deepEqual(requirements, []);
+});
+
 test("QA answerability rejects unrelated questions even when enterprise evidence exists", () => {
   const evidence = buildQaEvidence({
     question: "今天当地天气怎么样？",

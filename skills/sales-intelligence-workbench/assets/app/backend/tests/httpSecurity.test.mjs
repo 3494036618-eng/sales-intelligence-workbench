@@ -351,6 +351,15 @@ test("cookie mutations require CSRF and oversized JSON is rejected", async () =>
 
 test("CORS reflects only explicitly allowed origins and never uses a wildcard", async () => {
   await withRouter(async (request) => {
+    const sameOrigin = await request("/api/health", {
+      headers: {
+        Origin: "http://127.0.0.1:8877",
+        Host: "127.0.0.1:8877",
+      },
+    });
+    assert.equal(sameOrigin.status, 200);
+    assert.equal(sameOrigin.headers["access-control-allow-origin"], undefined);
+
     const allowed = await request("/api/health", { headers: { Origin: "https://allowed.example" } });
     assert.equal(allowed.status, 200);
     assert.equal(allowed.headers["access-control-allow-origin"], "https://allowed.example");

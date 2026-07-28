@@ -82,3 +82,63 @@ test("structured model calls use the Agent Plan Responses API and normalize usag
     reasoning_tokens: 0,
   });
 });
+
+test("structured model calls extract the first balanced JSON value from surrounding text", async () => {
+  const provider = new ModelProvider({
+    env: env({
+      AGENT_PLAN_API_KEY: "test-agent-plan-key",
+      MODEL_BASE_URL: "https://ark.example.test/api/plan/v3",
+      MODEL_NAME: "ark-code-latest",
+      MODEL_RUN_ENABLED: "true",
+    }),
+    fetchImpl: async () => new Response(JSON.stringify({
+      id: "resp_balanced_json",
+      output_text: [
+        "以下是结果：",
+        "```json",
+        "{\"message\":\"正文中的 } 和 ] 不应提前结束\",\"items\":[1,2]}",
+        "```",
+        "以上为结构化结果。",
+      ].join("\n"),
+    }), { status: 200, headers: { "Content-Type": "application/json" } }),
+  });
+
+  const result = await provider.callJson({
+    operation: "test",
+    system: "Only JSON.",
+    payload: { task: "probe" },
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.parsed, {
+    message: "正文中的 } 和 ] 不应提前结束",
+    items: [1, 2],
+  });
+});
+
+test("invalid structured output is retained only as bounded in-memory repair input", async () => {
+  const malformed = `{"title":"档案","body":[{"text":"未闭合`;
+  const provider = new ModelProvider({
+    env: env({
+      AGENT_PLAN_API_KEY: "test-agent-plan-key",
+      MODEL_BASE_URL: "https://ark.example.test/api/plan/v3",
+      MODEL_NAME: "ark-code-latest",
+      MODEL_RUN_ENABLED: "true",
+    }),
+    fetchImpl: async () => new Response(JSON.stringify({
+      id: "resp_invalid_json",
+      output_text: malformed,
+    }), { status: 200, headers: { "Content-Type": "application/json" } }),
+  });
+
+  const result = await provider.callJson({
+    operation: "test",
+    system: "Only JSON.",
+    payload: { task: "probe" },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, "invalid_json");
+  assert.equal(result.invalid_content, malformed);
+  assert.equal(result.raw_ref, "model:resp_invalid_json");
+});

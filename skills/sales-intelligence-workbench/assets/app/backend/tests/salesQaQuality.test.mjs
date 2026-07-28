@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   assessQaAnswerability,
   buildQaEvidence,
+  fuseQaRetrievalContexts,
 } from "../src/evidence/salesEvidence.js";
 
 const dossier = {
@@ -70,6 +71,22 @@ const cases = [
     question: "这个项目有哪些风险，下一步应该怎么推进？",
     expectedText: "预算审批",
   },
+  {
+    question: "一期计划接入多少个站点？",
+    expectedMaterialId: "doc_budget",
+  },
+  {
+    question: "验收时对告警到达率有什么要求？",
+    expectedMaterialId: "doc_budget",
+  },
+  {
+    question: "客户是否要求私有化部署？",
+    expectedMaterialId: "doc_budget",
+  },
+  {
+    question: "采购部由谁负责商务流程？",
+    expectedMaterialId: "chat_people",
+  },
 ];
 
 test("QA retrieval quality gate keeps every golden fact inside top five evidence chunks", () => {
@@ -111,4 +128,145 @@ test("QA evidence remains bounded and preserves source diversity", () => {
   assert.ok(evidence.some((item) => item.source_kind === "企业档案"));
   assert.ok(evidence.some((item) => item.source_kind !== "企业档案"));
   assert.ok(evidence.every((item) => item.summary.length <= 1600));
+});
+
+test("QA retrieval fusion promotes evidence recalled by multiple query variants", () => {
+  const fused = fuseQaRetrievalContexts([
+    {
+      query: "远航能源 客户预算",
+      contexts: [
+        {
+          material_id: "doc_general",
+          uri: "viking://sales/workspace/company/materials/general.md",
+          abstract: "一般项目背景。",
+          score: 0.9,
+        },
+        {
+          material_id: "doc_budget",
+          uri: "viking://sales/workspace/company/materials/budget.md",
+          abstract: "首期预算为 320 万元。",
+          score: 0.8,
+        },
+      ],
+    },
+    {
+      query: "远航能源 采购时间 预算窗口",
+      contexts: [
+        {
+          material_id: "doc_budget",
+          uri: "viking://sales/workspace/company/materials/budget.md",
+          abstract: "第四季度完成采购。",
+          score: 0.84,
+        },
+        {
+          material_id: "doc_schedule",
+          uri: "viking://sales/workspace/company/materials/schedule.md",
+          abstract: "项目排期说明。",
+          score: 0.79,
+        },
+      ],
+    },
+  ], {
+    maxContexts: 3,
+    maxPerMaterial: 2,
+  });
+
+  assert.equal(fused[0].material_id, "doc_budget");
+  assert.equal(fused[0].query_hits, 2);
+  assert.deepEqual(fused[0].matched_queries, [
+    "远航能源 客户预算",
+    "远航能源 采购时间 预算窗口",
+  ]);
+  assert.ok(fused[0].fusion_score > fused[1].fusion_score);
+});
+
+test("QA retrieval fusion preserves distinct sections but limits one material from crowding out others", () => {
+  const fused = fuseQaRetrievalContexts([
+    {
+      query: "客户需求 风险 下一步",
+      contexts: [
+        {
+          material_id: "doc_project",
+          uri: "viking://sales/workspace/company/materials/project/requirements.md",
+          abstract: "客户需要私有化部署。",
+          score: 0.91,
+        },
+        {
+          material_id: "doc_project",
+          uri: "viking://sales/workspace/company/materials/project/risks.md",
+          abstract: "预算审批尚未完成。",
+          score: 0.89,
+        },
+        {
+          material_id: "doc_project",
+          uri: "viking://sales/workspace/company/materials/project/background.md",
+          abstract: "一般项目背景。",
+          score: 0.88,
+        },
+        {
+          material_id: "chat_people",
+          uri: "viking://sales/workspace/company/materials/chat.md",
+          abstract: "周敏负责方案评审。",
+          score: 0.82,
+        },
+      ],
+    },
+  ], {
+    maxContexts: 4,
+    maxPerMaterial: 2,
+  });
+
+  assert.equal(fused.filter((item) => item.material_id === "doc_project").length, 2);
+  assert.ok(fused.some((item) => item.material_id === "chat_people"));
+});
+
+test("QA evidence does not force an unrelated dossier section into a focused internal-material answer", () => {
+  const evidence = buildQaEvidence({
+    dossier,
+    contexts,
+    question: "谁负责方案评审和商务流程？",
+    maxItems: 2,
+  });
+
+  assert.equal(evidence.length, 2);
+  assert.equal(evidence[0].material_id, "chat_people");
+  assert.ok(evidence.every((item) => item.source_kind !== "企业档案"));
+});
+
+test("QA chunk overlap keeps a fact intact when it crosses a long-text boundary", () => {
+  const boundaryContent = `${"背景".repeat(549)}第四季度确认预算，首批试点覆盖两个部门。`;
+  const evidence = buildQaEvidence({
+    contexts: [{
+      material_id: "doc_boundary",
+      title: "客户项目计划",
+      source_kind: "云文档",
+      content: boundaryContent,
+      score: 0.8,
+    }],
+    question: "客户什么时候确认预算？",
+    maxItems: 4,
+  });
+
+  assert.ok(evidence.some((item) => item.summary.includes("第四季度确认预算")));
+});
+
+test("QA evidence expands a matched chunk with adjacent document context", () => {
+  const evidence = buildQaEvidence({
+    contexts: [{
+      material_id: "doc_context_window",
+      title: "客户采购安排",
+      source_kind: "云文档",
+      content: [
+        "项目范围：首批验证覆盖两个业务部门。",
+        "预算窗口：客户计划在第四季度确认 320 万元预算。",
+        "付款安排：合同签署后支付首款，验收通过后支付尾款。",
+      ].join("\n\n"),
+      score: 0.86,
+    }],
+    question: "客户什么时候确认预算，付款怎么安排？",
+    maxItems: 3,
+  });
+
+  assert.match(evidence[0].summary, /第四季度确认 320 万元预算/);
+  assert.match(evidence[0].summary, /验收通过后支付尾款/);
 });

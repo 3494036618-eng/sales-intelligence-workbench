@@ -208,6 +208,7 @@ function qaEnumerationSubject(value) {
 function splitQaChunks(value, maxChars = 1100) {
   const input = qaText(value);
   if (!input) return [];
+  const overlapChars = Math.max(80, Math.min(180, Math.floor(maxChars * 0.16)));
   const blocks = input
     .split(/\n{2,}|(?=^#{1,6}\s)/m)
     .map((item) => item.trim())
@@ -242,8 +243,10 @@ function splitQaChunks(value, maxChars = 1100) {
       if (sentence.length > maxChars) {
         if (current) chunks.push(contextualize(current.trim()));
         current = "";
-        for (let index = 0; index < sentence.length; index += maxChars) {
+        const stride = Math.max(1, maxChars - overlapChars);
+        for (let index = 0; index < sentence.length; index += stride) {
           chunks.push(contextualize(sentence.slice(index, index + maxChars).trim()));
+          if (index + maxChars >= sentence.length) break;
         }
       } else {
         current = `${current}${current ? " " : ""}${sentence}`;
@@ -267,6 +270,22 @@ function splitQaChunks(value, maxChars = 1100) {
     }
   }
   return merged;
+}
+
+function qaChunkContextWindow(chunks, index, maxChars = 1600) {
+  const selected = [{ index, text: chunks[index] }].filter((item) => item.text);
+  let currentLength = selected[0]?.text.length || 0;
+  for (const neighborIndex of [index - 1, index + 1]) {
+    const neighbor = chunks[neighborIndex];
+    if (!neighbor) continue;
+    if (currentLength + neighbor.length + 2 > maxChars) continue;
+    selected.push({ index: neighborIndex, text: neighbor });
+    currentLength += neighbor.length + 2;
+  }
+  return selected
+    .sort((left, right) => left.index - right.index)
+    .map((item) => item.text)
+    .join("\n\n");
 }
 
 export function analyzeQaQuestion(question, conversationHistory = []) {
@@ -294,9 +313,88 @@ export function analyzeQaQuestion(question, conversationHistory = []) {
   };
 }
 
+function qaRetrievalContextIdentity(context = {}) {
+  const uri = qaText(context.uri, 1000)
+    .replace(/[?#].*$/, "")
+    .replace(/\/+$/, "")
+    .toLowerCase();
+  if (uri) return `uri:${uri}`;
+  const materialId = qaText(context.material_id, 240);
+  if (materialId) return `material:${materialId}`;
+  return `content:${digest(`${context.title || ""}\n${context.abstract || context.summary || ""}`)}`;
+}
+
+export function fuseQaRetrievalContexts(
+  queryResults = [],
+  {
+    maxContexts = 10,
+    maxPerMaterial = 2,
+    rrfK = 60,
+  } = {},
+) {
+  const fused = new Map();
+  for (const [queryIndex, queryResult] of (queryResults || []).entries()) {
+    const query = qaText(queryResult?.query, 1800) || `query-${queryIndex + 1}`;
+    const seenInQuery = new Set();
+    for (const [resultIndex, context] of (queryResult?.contexts || []).entries()) {
+      const identity = qaRetrievalContextIdentity(context);
+      if (seenInQuery.has(identity)) continue;
+      seenInQuery.add(identity);
+      const rank = resultIndex + 1;
+      const score = Number(context?.score);
+      const previous = fused.get(identity);
+      const entry = previous || {
+        ...context,
+        fusion_score: 0,
+        query_hits: 0,
+        matched_queries: [],
+        best_rank: rank,
+        best_provider_score: Number.isFinite(score) ? score : null,
+      };
+      entry.fusion_score += 1 / (Math.max(1, Number(rrfK || 60)) + rank);
+      entry.query_hits += 1;
+      entry.matched_queries.push(query);
+      entry.best_rank = Math.min(entry.best_rank, rank);
+      if (Number.isFinite(score)) {
+        entry.best_provider_score = entry.best_provider_score === null
+          ? score
+          : Math.max(entry.best_provider_score, score);
+      }
+      fused.set(identity, entry);
+    }
+  }
+  const ranked = [...fused.values()]
+    .map((context) => ({
+      ...context,
+      score: context.best_provider_score ?? context.score ?? null,
+      fusion_score: Number(context.fusion_score.toFixed(8)),
+      matched_queries: [...new Set(context.matched_queries)],
+    }))
+    .sort((left, right) => (
+      Number(right.fusion_score || 0) - Number(left.fusion_score || 0)
+      || Number(right.best_provider_score ?? -1) - Number(left.best_provider_score ?? -1)
+      || Number(left.best_rank || 999) - Number(right.best_rank || 999)
+      || qaRetrievalContextIdentity(left).localeCompare(qaRetrievalContextIdentity(right))
+    ));
+  const limit = Math.max(1, Math.min(20, Number(maxContexts || 10)));
+  const perMaterialLimit = Math.max(1, Math.min(6, Number(maxPerMaterial || 2)));
+  const materialCounts = new Map();
+  const selected = [];
+  for (const context of ranked) {
+    const materialKey = qaText(context.material_id, 240)
+      || qaRetrievalContextIdentity(context);
+    const count = materialCounts.get(materialKey) || 0;
+    if (count >= perMaterialLimit) continue;
+    selected.push(context);
+    materialCounts.set(materialKey, count + 1);
+    if (selected.length >= limit) break;
+  }
+  return selected;
+}
+
 function qaEvidenceScore(questionPlan, item) {
   const queryLexemes = qaLexemes(questionPlan.resolved_question);
-  const summaryText = String(item.summary || "");
+  const summaryText = String(item.retrieval_text || item.summary || "");
   const labelText = String(item.label || "");
   const leadText = summaryText.slice(0, 260);
   const labelLexemes = qaLexemes(labelText);
@@ -790,12 +888,14 @@ export function buildQaEvidence({
       || context.abstract
       || context.summary,
     );
-    splitQaChunks(content, 1100).forEach((chunk, index) => {
+    const chunks = splitQaChunks(content, 1100);
+    chunks.forEach((chunk, index) => {
       candidates.push({
         id: `evidence_${digest(`internal\n${identity}\n${index}\n${chunk}`).slice(0, 28)}`,
         label: text(context.title || identity, 240),
         source_kind: text(context.source_kind || "内部资料", 80),
-        summary: text(chunk, 1600),
+        summary: text(qaChunkContextWindow(chunks, index), 1600),
+        retrieval_text: text(chunk, 1600),
         url: "",
         uri: text(context.uri, 1000),
         source_quality: "internal",
@@ -814,7 +914,7 @@ export function buildQaEvidence({
   const deduped = [...new Map(
     candidates
       .filter((item) => item.summary && meaningfulQaSummary(item.summary))
-      .map((item) => [digest(`${item.source_kind}\n${item.summary}`), item]),
+      .map((item) => [digest(`${item.source_kind}\n${item.retrieval_text || item.summary}`), item]),
   ).values()].map((item) => ({
     ...item,
     ...qaEvidenceScore(questionPlan, item),
@@ -825,29 +925,55 @@ export function buildQaEvidence({
     || left.id.localeCompare(right.id)
   ));
   const limit = Math.max(2, Math.min(20, Number(maxItems || 12)));
-  const selected = ranked.slice(0, limit);
-  for (const sourceKind of ["企业档案", "internal"]) {
-    const hasKind = sourceKind === "internal"
-      ? selected.some((item) => item.source_kind !== "企业档案")
-      : selected.some((item) => item.source_kind === sourceKind);
-    if (hasKind) continue;
-    const fallback = ranked.find((item) => (
-      sourceKind === "internal"
-        ? item.source_kind !== "企业档案"
-        : item.source_kind === sourceKind
-    ));
-    if (!fallback) continue;
-    if (selected.length >= limit) selected.pop();
-    selected.push(fallback);
-  }
-  return selected.sort((left, right) => (
-    Number(right.retrieval_score || 0) - Number(left.retrieval_score || 0)
+  const topScore = Number(ranked[0]?.retrieval_score || 0);
+  const relevanceFloor = topScore >= 0.08
+    ? Math.max(0.025, topScore * 0.3)
+    : 0;
+  const eligible = ranked.filter((item) => (
+    Number(item.retrieval_score || 0) >= relevanceFloor
   ));
+  const selected = [];
+  const sourceCounts = new Map();
+  while (selected.length < limit) {
+    const remaining = eligible.filter((candidate) => (
+      !selected.some((item) => item.id === candidate.id)
+    ));
+    if (!remaining.length) break;
+    const next = remaining
+      .map((candidate) => {
+        const sourceIdentity = candidate.material_id
+          ? `material:${candidate.material_id}`
+          : candidate.source_kind === "企业档案"
+            ? `dossier:${dossier?.id || candidate.label}`
+            : `source:${candidate.uri || candidate.label}`;
+        const sourceCount = sourceCounts.get(sourceIdentity) || 0;
+        return {
+          candidate,
+          sourceIdentity,
+          diversifiedScore: Number(candidate.retrieval_score || 0) - sourceCount * 0.025,
+        };
+      })
+      .filter((item) => (sourceCounts.get(item.sourceIdentity) || 0) < 3)
+      .sort((left, right) => (
+        right.diversifiedScore - left.diversifiedScore
+        || Number(right.candidate.retrieval_score || 0)
+          - Number(left.candidate.retrieval_score || 0)
+        || left.candidate.id.localeCompare(right.candidate.id)
+      ))[0];
+    if (!next) break;
+    selected.push(next.candidate);
+    sourceCounts.set(next.sourceIdentity, (sourceCounts.get(next.sourceIdentity) || 0) + 1);
+  }
+  return selected
+    .sort((left, right) => (
+      Number(right.retrieval_score || 0) - Number(left.retrieval_score || 0)
+    ))
+    .map(({ retrieval_text: _retrievalText, ...item }) => item);
 }
 
 export function buildQaEnumerationRequirements(question, evidence = []) {
   const normalizedQuestion = qaText(question, 1200);
-  const asksForEnumeration = /哪些|有哪|列出|列举|逐项|分别|所有|全部|包括什么|包含什么|多少(?:项|种|个)/.test(normalizedQuestion);
+  const asksForEnumeration = /哪些|有哪|列出|列举|逐项|所有|全部|包括什么|包含什么|多少(?:项|种|个)/.test(normalizedQuestion);
   if (!asksForEnumeration) return [];
   const queryLexemes = qaLexemes(qaEnumerationSubject(normalizedQuestion));
   const candidates = (evidence || [])

@@ -57,6 +57,5 @@ if (segments.length !== 2) {
 }
 
 const [owner, repo] = segments;
-const entryUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${encodeURIComponent(ref)}/docs/agents/skills/sales-assistant-builder.md`;
+const entryUrl = `https://github.com/${owner}/${repo}/blob/${encodeURIComponent(ref)}/skills/sales-intelligence-workbench/SKILL.md`;
 process.stdout.write(`帮我初始化销售助手：${entryUrl}\n`);
-

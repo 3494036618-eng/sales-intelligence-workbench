@@ -441,6 +441,93 @@ test("dossier generation repairs invalid model citation ids once", async () => {
   assert.equal(dossier.raw_ref, "model:dossier-repaired");
 });
 
+test("production repairs a malformed dossier JSON response from the original model output", async () => {
+  const modelCalls = [];
+  const modelProvider = {
+    isRunEnabled: () => true,
+    async callJson(input) {
+      modelCalls.push(structuredClone(input));
+      if (modelCalls.length === 1) {
+        return {
+          ok: false,
+          error: {
+            code: "invalid_json",
+            message: "Unterminated string in JSON response.",
+          },
+          invalid_content: "{\"title\":\"测试科技有限公司销售情报报告\",\"body\":[{\"text\":\"未闭合",
+        };
+      }
+      return {
+        ok: true,
+        parsed: {
+          title: "测试科技有限公司销售情报报告",
+          summary: "企业近期发布了产品更新公告，可优先验证销售知识库场景。",
+          body: [
+            { text: "企业与业务概览：该企业面向企业客户提供软件产品，核心业务覆盖知识库建设、内容检索和协作管理。", citation_ids: ["evidence_professional"] },
+            { text: "经营与业务动态：该企业持续经营企业软件相关业务，近期产品更新进一步强化了知识库协作能力。", citation_ids: ["evidence_professional"] },
+            { text: "近期公开动态：企业近期发布产品更新公告，新增面向销售团队的知识库协作能力和内容检索功能。", citation_ids: ["evidence_public"] },
+            { text: "风险与关注事项：产品落地需要同步确认企业数据权限、知识库访问边界和部署环境要求，避免影响试点交付。", citation_ids: ["evidence_professional", "evidence_public"] },
+            { text: "销售机会判断：产品更新与企业软件业务形成直接关联，可优先从销售知识库问答和协作检索场景开展试点。", citation_ids: ["evidence_professional", "evidence_public"] },
+            { text: "建议行动：1. 联系产品与销售运营负责人确认试点目标。\n2. 核实知识库范围和数据权限边界。\n3. 准备小范围验证方案与验收指标。", citation_ids: ["evidence_professional", "evidence_public"] },
+          ],
+          memory_summary: "企业近期更新产品，可继续核验知识库问答场景。",
+        },
+        usage: { prompt_tokens: 160, completion_tokens: 80, total_tokens: 240 },
+        raw_ref: "model:dossier-retry",
+      };
+    },
+  };
+  const service = new SalesService({
+    env: envReader({ APP_WORKSPACE_ID: "workspace-test" }),
+    runtimePolicy: productionPolicy,
+    seed: seed(),
+    modelProvider,
+  });
+  const evidencePack = {
+    evidence_hash: "evidence-pack-json-retry",
+    items: [
+      {
+        id: "evidence_professional",
+        label: "企业工商数据库",
+        source_kind_label: "专业数据集",
+        summary: "测试科技有限公司面向企业客户提供软件产品。",
+        provider: "datapro",
+        quality_tier: 1,
+        independence_key: "datapro-company",
+      },
+      {
+        id: "evidence_public",
+        label: "企业产品更新公告",
+        source_kind_label: "联网搜索",
+        summary: "测试科技有限公司近期发布了产品更新公告。",
+        provider: "web_search",
+        url: "https://news.test/company-update",
+        quality_tier: 2,
+        independence_key: "news.test",
+      },
+    ],
+  };
+
+  const dossier = await service.generateDossierWithModel(
+    service.data.companies.company_1,
+    evidencePack,
+    [],
+  );
+
+  assert.equal(modelCalls.length, 2);
+  assert.equal(modelCalls[0].operation, "sales_dossier");
+  assert.equal(modelCalls[0].maxTokens, 2800);
+  assert.equal(modelCalls[1].operation, "sales_dossier_json_repair");
+  assert.equal(modelCalls[1].maxTokens, 3600);
+  assert.match(modelCalls[1].system, /修复上一轮模型生成的无效 JSON/);
+  assert.equal(
+    modelCalls[1].payload.invalid_json_content,
+    "{\"title\":\"测试科技有限公司销售情报报告\",\"body\":[{\"text\":\"未闭合",
+  );
+  assert.equal(dossier.body.length, 6);
+  assert.equal(dossier.raw_ref, "model:dossier-retry");
+});
+
 test("QA derives paragraph citations from allowed evidence and records model usage", async () => {
   const fixture = createWorkflowService();
   await fixture.service.createDossier("company_1");
@@ -462,6 +549,7 @@ test("QA derives paragraph citations from allowed evidence and records model usa
   assert.doesNotMatch(JSON.stringify(qaCall.payload.evidence), /overview|company_dp_should_not_be_visible/i);
   assert.match(qaCall.system, /正式展示标题/);
   assert.match(qaCall.system, /不得输出 evidence\.uri/);
+  assert.match(qaCall.system, /不得自行增加“补充”/);
 
   const run = await fixture.service.getProviderRun(result.provider_run_id);
   const modelStep = run.steps.find((step) => step.provider === "model");
@@ -1401,7 +1489,7 @@ test("production rejects a QA answer that fabricates citation identifiers", asyn
   );
 });
 
-test("production retries a truncated QA JSON response with a larger output budget", async () => {
+test("production repairs a malformed QA JSON response from the original model output", async () => {
   const calls = [];
   const service = new SalesService({
     env: envReader(),
@@ -1418,6 +1506,7 @@ test("production retries a truncated QA JSON response with a larger output budge
               code: "invalid_json",
               message: "Unterminated string in JSON response.",
             },
+            invalid_content: "{\"paragraphs\":[{\"text\":\"结论：企业正在推进扩产计划",
           };
         }
         return {
@@ -1458,8 +1547,12 @@ test("production retries a truncated QA JSON response with a larger output budge
   assert.equal(calls.length, 2);
   assert.equal(calls[0].operation, "sales_qa");
   assert.equal(calls[0].maxTokens, 1600);
-  assert.equal(calls[1].operation, "sales_qa_retry");
+  assert.equal(calls[1].operation, "sales_qa_json_repair");
   assert.equal(calls[1].maxTokens, 2200);
+  assert.equal(
+    calls[1].payload.invalid_json_content,
+    "{\"paragraphs\":[{\"text\":\"结论：企业正在推进扩产计划",
+  );
   assert.equal(answer.insufficient, false);
   assert.match(answer.text, /扩产计划/);
   assert.deepEqual(answer.citation_ids, ["evidence_real"]);
@@ -1525,8 +1618,100 @@ test("production retries a QA answer that omits explicit table items", async () 
     calls[0].payload.enumeration_requirements.map((item) => item.label),
     ["语言模型", "Claude code/ Agent 能力", "联网搜索", "Data MCP:股票金融数据/国内企业工商数据", "多工具兼容", "消耗统一计量"],
   );
-  assert.ok(calls[1].payload.quality_feedback.some((item) => item.includes("多工具兼容")));
+  assert.ok(calls[1].payload.validation_feedback.some((item) => item.includes("多工具兼容")));
   assert.match(answer.text, /消耗统一计量/);
+});
+
+test("production retries a QA answer with invalid citations and keeps fail-closed validation", async () => {
+  const calls = [];
+  const service = new SalesService({
+    env: envReader(),
+    runtimePolicy: productionPolicy,
+    seed: seed(),
+    modelProvider: {
+      isRunEnabled: () => true,
+      async callJson(input) {
+        calls.push(structuredClone(input));
+        const corrected = input.operation === "sales_qa_quality_retry";
+        return {
+          ok: true,
+          parsed: {
+            paragraphs: [{
+              text: corrected
+                ? "Trace 通过唯一 Trace ID 串联一次完整调用，Span 表示其中的单个执行节点。"
+                : "Trace 通过唯一 Trace ID 串联一次完整调用，Span 表示其中的单个执行节点。",
+              citation_ids: [corrected ? "evidence_trace" : "1"],
+            }],
+            insufficient: false,
+          },
+          usage: { prompt_tokens: 160, completion_tokens: 80, total_tokens: 240 },
+          raw_ref: corrected ? "model:qa-citation-retry" : "model:qa-invalid-citation",
+        };
+      },
+    },
+  });
+
+  const answer = await service.generateQaAnswer(
+    service.data.companies.company_1,
+    "Trace 和 Span 分别承担什么作用？",
+    null,
+    [],
+    [{
+      id: "evidence_trace",
+      label: "方舟全链路数据体系建设研讨会",
+      source_kind: "飞书云文档",
+      summary: "Trace 通过唯一 Trace ID 串联一次完整调用；每个执行节点对应一个 Span。",
+    }],
+  );
+
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].operation, "sales_qa");
+  assert.equal(calls[1].operation, "sales_qa_quality_retry");
+  assert.ok(calls[1].payload.validation_feedback.some((item) => item.includes("无效引用")));
+  assert.deepEqual(answer.citation_ids, ["evidence_trace"]);
+  assert.equal(answer.citations[0].label, "方舟全链路数据体系建设研讨会");
+});
+
+test("QA workflow preserves bounded citation validation diagnostics in the failed provider run", async () => {
+  const fixture = createWorkflowService();
+  fixture.service.modelProvider = {
+    isRunEnabled: () => true,
+    async callJson() {
+      return {
+        ok: true,
+        parsed: {
+          paragraphs: [{
+            text: "客户希望先验证知识库问答，并确认数据权限边界。",
+            citation_ids: ["invented-source"],
+          }],
+          insufficient: false,
+        },
+      };
+    },
+  };
+  const generateQaAnswer = fixture.service.generateQaAnswer.bind(fixture.service);
+  fixture.service.generateQaAnswer = async (...args) => {
+    const previousPolicy = fixture.service.runtimePolicy;
+    fixture.service.runtimePolicy = { ...previousPolicy, fail_closed: true };
+    try {
+      return await generateQaAnswer(...args);
+    } finally {
+      fixture.service.runtimePolicy = previousPolicy;
+    }
+  };
+
+  await assert.rejects(
+    () => fixture.service.askQuestion("company_1", { question: "客户希望先验证什么？" }),
+    (error) => error.code === "model_unavailable",
+  );
+
+  const [run] = await fixture.service.listProviderRuns({
+    operation: "sales_qa",
+    entity_id: "company_1",
+  });
+  assert.equal(run.status, "failed");
+  assert.ok(run.error.validation_errors.some((item) => item.includes("无效引用")));
+  assert.equal((await fixture.service.getJob(run.job_id)).status, "failed");
 });
 
 test("cancelled jobs remain cancelled when a late workflow completion arrives", async () => {

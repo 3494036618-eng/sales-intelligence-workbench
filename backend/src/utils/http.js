@@ -18,7 +18,15 @@ export function parseAllowedOrigins(value = "") {
 
 export function isOriginAllowed(req, allowedOrigins = []) {
   const origin = String(req?.headers?.origin || "").trim();
-  return !origin || allowedOrigins.includes(origin);
+  if (!origin) return true;
+  try {
+    const originUrl = new URL(origin);
+    const requestHost = String(req?.headers?.host || "").trim().toLowerCase();
+    if (requestHost && originUrl.host.toLowerCase() === requestHost) return true;
+  } catch {
+    return false;
+  }
+  return allowedOrigins.includes(origin);
 }
 
 export function withCors(req, res, allowedOrigins = []) {

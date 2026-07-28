@@ -61,12 +61,16 @@ npm run skill:command -- \
 
 把命令输出的整句话交给用户。用户只需在 Codex 中发送：
 
-> 帮我初始化销售助手：`https://raw.githubusercontent.com/<组织>/<仓库>/v0.9.0/docs/agents/skills/sales-assistant-builder.md`
+> 帮我初始化销售助手：`https://github.com/<组织>/<仓库>/blob/v0.9.0/skills/sales-intelligence-workbench/SKILL.md`
 
-该 URL 直接返回一份公开 Builder Skill。Codex 会先解释下载与本机写入影响并取得同意，
-再从 URL 锁定的 release 取得完整仓库，执行离线校验、安装正式 Skill，并立即衔接下面的
-Cookbook 搭建流程。读取 URL 本身不会创建云资源或产生 AFP。公开入口文件见
-[销售助手 Builder](docs/agents/skills/sales-assistant-builder.md)。
+该 URL 直接指向唯一的正式 Skill。即使用户本机没有仓库、依赖和配置文件，Codex 也会先
+解释下载与本机写入影响，再从 URL 锁定的 release 取得完整仓库，执行离线校验、安装
+Skill，并立即衔接下面的 Cookbook 搭建流程。读取 URL、下载仓库和离线校验不会创建云资源
+或产生 AFP。
+
+这里的“从 0 搭建”不等于绕过第三方服务授权：用户仍需拥有 Agent Plan 及对应 Harness
+权限，并在流程中完成 Supabase、OpenViking 和可选飞书资料的授权。Skill 负责识别缺项、
+逐步引导、写入本机私密配置和验收，而不是要求用户预先配置好再开始。
 
 当前目录还没有公开 Git 远端和 release tag，因此上面的 `<组织>/<仓库>` 不是可发送给
 外部用户的真实地址。发布者必须先完成仓库公开、LICENSE 确认和 release 验收，再用生成

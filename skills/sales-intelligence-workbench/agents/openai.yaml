@@ -1,6 +1,6 @@
 interface:
   display_name: "销售团队工作台 Builder"
-  short_description: "从销售需求到真实数据闭环，搭建可直接使用的团队工作台"
-  default_prompt: "使用 $sales-intelligence-workbench 按 Cookbook 步骤帮我从 0 搭建并验收自己的真实销售团队工作台。"
+  short_description: "从零配置到真实数据闭环，初始化单工作区销售助手"
+  default_prompt: "使用 $sales-intelligence-workbench 从 0 初始化并验收我的真实销售助手；没有本地项目时先按远程入口取得完整仓库。"
 policy:
   allow_implicit_invocation: true

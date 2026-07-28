@@ -5,6 +5,7 @@ import { providerFailure, providerSuccess } from "./providerResult.js";
 const DEFAULT_BASE_URL = "https://ark.cn-beijing.volces.com/api/plan/v3";
 const DEFAULT_MODEL_NAME = "ark-code-latest";
 const DEFAULT_TIMEOUT_MS = 90000;
+const MAX_INVALID_JSON_CONTENT_LENGTH = 30000;
 
 function enabled(value) {
   return ["1", "true", "yes", "on"].includes(String(value || "").toLowerCase());
@@ -18,13 +19,38 @@ function stripJsonFence(content) {
       .replace(/\s*```$/i, "")
       .trim()
     : text;
+
+  for (let start = 0; start < unfenced.length; start += 1) {
+    const opening = unfenced[start];
+    if (opening !== "{" && opening !== "[") continue;
+    const stack = [opening];
+    let inString = false;
+    let escaped = false;
+    for (let index = start + 1; index < unfenced.length; index += 1) {
+      const character = unfenced[index];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (character === "\\") escaped = true;
+        else if (character === "\"") inString = false;
+        continue;
+      }
+      if (character === "\"") {
+        inString = true;
+        continue;
+      }
+      if (character === "{" || character === "[") {
+        stack.push(character);
+        continue;
+      }
+      if (character !== "}" && character !== "]") continue;
+      const expected = character === "}" ? "{" : "[";
+      if (stack.at(-1) !== expected) break;
+      stack.pop();
+      if (!stack.length) return unfenced.slice(start, index + 1);
+    }
+  }
+
   if (unfenced.startsWith("{") || unfenced.startsWith("[")) return unfenced;
-  const objectStart = unfenced.indexOf("{");
-  const objectEnd = unfenced.lastIndexOf("}");
-  if (objectStart >= 0 && objectEnd > objectStart) return unfenced.slice(objectStart, objectEnd + 1);
-  const arrayStart = unfenced.indexOf("[");
-  const arrayEnd = unfenced.lastIndexOf("]");
-  if (arrayStart >= 0 && arrayEnd > arrayStart) return unfenced.slice(arrayStart, arrayEnd + 1);
   return unfenced;
 }
 
@@ -66,6 +92,12 @@ function asString(value, fallback = "") {
 
 function stripAndParseJson(content) {
   return JSON.parse(stripJsonFence(content));
+}
+
+function invalidJsonContent(content) {
+  return String(content || "")
+    .trim()
+    .slice(0, MAX_INVALID_JSON_CONTENT_LENGTH);
 }
 
 function extractResponseText(payload) {
@@ -281,6 +313,7 @@ export class ModelProvider {
         request_id: requestId,
         raw_ref: requestId ? `model:${requestId}` : null,
         latency_ms: Date.now() - startedAt,
+        invalid_content: invalidJsonContent(content),
       });
     }
   }

@@ -34,9 +34,18 @@ function run(args, expectedStatus) {
 
 try {
   run([], 0);
-  assert.ok(fs.existsSync(path.join(target, "SKILL.md")));
+  const installedSkillPath = path.join(target, "SKILL.md");
+  assert.ok(fs.existsSync(installedSkillPath));
   assert.ok(fs.existsSync(path.join(target, "scripts", "onboard.mjs")));
   assert.equal(fs.existsSync(path.join(target, ".DS_Store")), false);
+  const installedSkill = fs.readFileSync(installedSkillPath, "utf8");
+  assert.match(installedSkill, /## 远程 Skill 入口/);
+  assert.match(
+    installedSkill,
+    /skills\/sales-intelligence-workbench\/SKILL\.md/,
+  );
+  assert.match(installedSkill, /node scripts\/validate-skill-package\.mjs/);
+  assert.match(installedSkill, /node scripts\/test-skill-installer\.mjs/);
 
   const help = spawnSync(process.execPath, [path.join(target, "scripts", "onboard.mjs"), "--help"], {
     env: environment,
@@ -84,8 +93,9 @@ try {
   assert.equal(publicCommand.status, 0, publicCommand.stderr);
   assert.equal(
     publicCommand.stdout.trim(),
-    "帮我初始化销售助手：https://raw.githubusercontent.com/example/sales-workbench/v0.9.0/docs/agents/skills/sales-assistant-builder.md",
+    "帮我初始化销售助手：https://github.com/example/sales-workbench/blob/v0.9.0/skills/sales-intelligence-workbench/SKILL.md",
   );
+  assert.doesNotMatch(publicCommand.stdout, /sales-assistant-builder\.md/);
 
   const mutableCommand = spawnSync(process.execPath, [
     commandPrinter,
