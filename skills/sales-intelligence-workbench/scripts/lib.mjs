@@ -113,6 +113,8 @@ export const RUNTIME_KEYS = Object.freeze([
   "OPENVIKING_CLI",
   "OPENVIKING_CLI_CONFIG",
   "OPENVIKING_AGENT_ID",
+  "OPENVIKING_RESOURCE_ID",
+  "OPENVIKING_COLLECTION_NAME",
   "OPENVIKING_RUN_ENABLED",
   "OPENVIKING_SALES_ROOT_URI",
   "OPENVIKING_FIND_LIMIT",
@@ -179,7 +181,7 @@ const RUNTIME_DEFAULTS = Object.freeze({
   LIVE_PROBE_COMPANY: "北京火山引擎科技有限公司",
   DATAPRO_MCP_URL: "https://datapro.hqd.cn-beijing.volces.com/mcp",
   DATAPRO_MAX_SOURCES: "4",
-  DATAPRO_TIMEOUT_MS: "30000",
+  DATAPRO_TIMEOUT_MS: "60000",
   DATAPRO_MAX_RETRIES: "1",
   WEB_SEARCH_BASE_URL: "https://open.feedcoopapi.com/search_api/web_search",
   WEB_SEARCH_TRAFFIC_TAG: "skill_web_search_common",
@@ -349,10 +351,8 @@ export function writeConfiguration(inputValues, { mode = "production" } = {}) {
     values,
     "OPENVIKING_RUN_ENABLED",
     Boolean(
-      credentialValues.OPENVIKING_API_KEY
-      || (agentPlanKey && runtimeValues.OPENVIKING_BASE_URL)
-      || runtimeValues.OPENVIKING_CLI
-      || runtimeValues.OPENVIKING_CLI_CONFIG
+      (credentialValues.OPENVIKING_API_KEY && runtimeValues.OPENVIKING_BASE_URL)
+      || openVikingCliConfiguration(runtimeValues).ready
     ),
   );
   runtimeValues.SUPABASE_RUN_ENABLED = configuredFlag(
@@ -422,6 +422,29 @@ export function resolveUserPath(value) {
   if (value === "~") return os.homedir();
   if (value.startsWith(`~${path.sep}`)) return path.join(os.homedir(), value.slice(2));
   return path.resolve(value);
+}
+
+export function openVikingCliConfiguration(values = readConfiguration()) {
+  const configuredPath = values.OPENVIKING_CLI_CONFIG || "~/.openviking/ovcli.conf";
+  const configPath = resolveUserPath(configuredPath);
+  try {
+    const parsed = JSON.parse(fs.readFileSync(configPath, "utf8"));
+    const url = String(parsed?.url || parsed?.base_url || "").trim();
+    const apiKeyPresent = Boolean(String(parsed?.api_key || "").trim());
+    return {
+      path: configPath,
+      ready: Boolean(url && apiKeyPresent),
+      url: url || null,
+      agent_id: String(parsed?.agent_id || "").trim() || null,
+    };
+  } catch {
+    return {
+      path: configPath,
+      ready: false,
+      url: null,
+      agent_id: null,
+    };
+  }
 }
 
 export function run(command, args, options = {}) {
@@ -532,6 +555,7 @@ export function liveDoctorEvidence() {
 export function configurationSummary() {
   const values = readConfiguration();
   const hasAgentPlanKey = Boolean(values.AGENT_PLAN_API_KEY);
+  const openVikingCli = openVikingCliConfiguration(values);
   return {
     app_mode: values.APP_MODE || null,
     repository_mode: values.REPOSITORY_MODE || null,
@@ -543,9 +567,8 @@ export function configurationSummary() {
     datapro: Boolean(values.DATAPRO_API_KEY || hasAgentPlanKey),
     web_search: Boolean(values.WEB_SEARCH_API_KEY || hasAgentPlanKey),
     openviking: Boolean(
-      (values.OPENVIKING_BASE_URL && (values.OPENVIKING_API_KEY || hasAgentPlanKey))
-      || values.OPENVIKING_CLI
-      || values.OPENVIKING_CLI_CONFIG
+      (values.OPENVIKING_BASE_URL && values.OPENVIKING_API_KEY)
+      || openVikingCli.ready
     ),
     supabase_data_api: Boolean(values.SUPABASE_API_URL && values.SUPABASE_SERVICE_ROLE_KEY && values.APP_WORKSPACE_ID),
     supabase_control_plane: Boolean(values.VOLCENGINE_ACCESS_KEY && values.VOLCENGINE_SECRET_KEY),

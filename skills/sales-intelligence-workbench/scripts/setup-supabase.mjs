@@ -18,6 +18,57 @@ function parseJson(stdout, label) {
   }
 }
 
+function readOption(name) {
+  const index = process.argv.indexOf(name);
+  return index >= 0 ? String(process.argv[index + 1] || "").trim() : "";
+}
+
+function workspaceItems(payload) {
+  if (Array.isArray(payload)) return payload;
+  const candidates = [
+    payload?.workspaces,
+    payload?.Workspaces,
+    payload?.items,
+    payload?.Items,
+    payload?.data,
+    payload?.Data,
+    payload?.data?.items,
+    payload?.Data?.Items,
+  ];
+  return candidates.find(Array.isArray) || [];
+}
+
+function workspaceId(item) {
+  return String(
+    item?.workspace_id
+      || item?.WorkspaceId
+      || item?.WorkspaceID
+      || item?.id
+      || item?.ID
+      || item?.ref
+      || item?.Ref
+      || "",
+  ).trim();
+}
+
+function workspaceName(item) {
+  return String(item?.name || item?.Name || item?.workspace_name || item?.WorkspaceName || "未命名 Workspace").trim();
+}
+
+function isAgentPlanWorkspace(item) {
+  if (item?.is_agent_plan === true || item?.is_agent_plan_instance === true) return true;
+  const plan = String(
+    item?.plan_mode
+      || item?.PlanMode
+      || item?.billing_mode
+      || item?.BillingMode
+      || item?.source
+      || item?.Source
+      || "",
+  );
+  return /agent[\s_-]*plan/i.test(plan);
+}
+
 function runCli(command, args, environment) {
   const result = spawnSync(command, args, {
     encoding: "utf8",
@@ -78,45 +129,78 @@ const apply = process.argv.includes("--apply");
 const confirmed = process.argv.includes("--yes");
 const configuration = readConfiguration();
 const command = configuration.SUPABASE_CLI_BIN || "byted-supabase-cli";
-const profile = configuration.SUPABASE_CLI_PROFILE || "current";
+const profile = readOption("--profile") || configuration.SUPABASE_CLI_PROFILE || "current";
+const requestedWorkspaceId = readOption("--workspace-id") || configuration.SUPABASE_WORKSPACE_ID || "";
+const requestedBranchId = readOption("--branch-id") || configuration.SUPABASE_BRANCH_ID || "";
+const profileArgs = profile === "current" ? [] : ["--profile", profile];
+const environment = runtimeEnvironment();
+if (profileArgs.length) {
+  delete environment.VOLCENGINE_ACCESS_KEY;
+  delete environment.VOLCENGINE_SECRET_KEY;
+  delete environment.VOLCENGINE_SESSION_TOKEN;
+}
 
-if (!configuration.SUPABASE_WORKSPACE_ID) {
-  throw new Error(
-    "缺少 SUPABASE_WORKSPACE_ID。请先选择已有 Workspace；需要新建时，先由用户确认计费影响，再使用 byted-supabase-cli projects create。",
-  );
+let selectedWorkspaceId = requestedWorkspaceId;
+let discovered = [];
+if (!selectedWorkspaceId && commandExists(command)) {
+  const listed = parseJson(runCli(command, [
+    ...profileArgs,
+    "projects", "list",
+    "--limit", "100",
+    "-o", "json",
+  ], environment), "Supabase projects list");
+  discovered = workspaceItems(listed)
+    .filter((item) => isAgentPlanWorkspace(item) && workspaceId(item))
+    .map((item) => ({ id: workspaceId(item), name: workspaceName(item) }));
+  if (discovered.length === 1) selectedWorkspaceId = discovered[0].id;
 }
 
 if (!apply) {
+  const selection = selectedWorkspaceId
+    ? `已选 Agent Plan Workspace：${selectedWorkspaceId}`
+    : discovered.length > 1
+      ? `发现 ${discovered.length} 个 Agent Plan Workspace，请从下列列表选择：\n${discovered
+        .map((item) => `- ${item.name}（${item.id}）`)
+        .join("\n")}`
+      : "尚未选定 Agent Plan Workspace。";
+  const applyCommand = selectedWorkspaceId
+    ? `setup-supabase.mjs --apply --workspace-id ${selectedWorkspaceId}${profile === "current" ? "" : ` --profile ${profile}`} --yes`
+    : "setup-supabase.mjs --apply --workspace-id <workspace-id> --yes";
   process.stdout.write([
     "Supabase 初始化计划（当前未写入）：",
+    selection,
     "1. 只读确认目标 Workspace 属于 Agent Plan，且处于可用状态。",
-    "2. 只读获取目标 Workspace 的 Data API 端点和 Service Role Key。",
-    "3. 仅写入本机销售工作台私密配置，不打印密钥。",
+    "2. 通过已登录的官方 CLI 自动获取 Data API 端点和后端内部凭据。",
+    "3. 仅写入本机销售工作台私密配置，不向用户显示内部凭据。",
     "4. 对目标数据库应用随应用包分发的版本化迁移。",
     "5. 创建或更新 APP_WORKSPACE_ID 对应的应用 Workspace 记录。",
     "6. 通过 Data API 回读验证。",
-    "确认目标无误后执行：setup-supabase.mjs --apply --yes",
+    `确认目标无误后执行：${applyCommand}`,
     "本命令不会创建、暂停或删除云 Workspace。",
+    !commandExists(command)
+      ? `未检测到 ${command}；请先安装并运行 byted-supabase-cli login --profile agent-plan --region cn-beijing --is-agent-plan。`
+      : "",
     "",
-  ].join("\n"));
+  ].filter(Boolean).join("\n"));
   process.exit(0);
 }
 if (!confirmed) {
   throw new Error("应用迁移会修改目标数据库；确认目标无误后同时传入 --apply --yes。");
 }
 if (!commandExists(command)) throw new Error(`找不到 ${command}，请先安装并登录火山 Supabase CLI。`);
-
-const environment = runtimeEnvironment();
-const profileArgs = profile === "current" ? [] : ["--profile", profile];
-if (profileArgs.length) {
-  delete environment.VOLCENGINE_ACCESS_KEY;
-  delete environment.VOLCENGINE_SECRET_KEY;
-  delete environment.VOLCENGINE_SESSION_TOKEN;
+if (!selectedWorkspaceId) {
+  if (discovered.length > 1) {
+    throw new Error("检测到多个 Agent Plan Workspace，请使用 --workspace-id 明确选择目标。");
+  }
+  throw new Error(
+    "未发现可用的 Agent Plan Workspace。请先登录官方 CLI；需要新建时，先由用户确认计费影响，再执行 projects create --is-agent-plan。",
+  );
 }
+
 const workspace = parseJson(runCli(command, [
   ...profileArgs,
   "projects", "list",
-  "--workspace-id", configuration.SUPABASE_WORKSPACE_ID,
+  "--workspace-id", selectedWorkspaceId,
   "--detail",
   "-o", "json",
 ], environment), "Supabase projects list");
@@ -130,18 +214,18 @@ if (String(workspace.status || "").toLowerCase() !== "running") {
 const endpointArgs = [
   ...profileArgs,
   "endpoints", "list",
-  "--workspace-id", configuration.SUPABASE_WORKSPACE_ID,
+  "--workspace-id", selectedWorkspaceId,
   "-o", "json",
 ];
 const keyArgs = [
   ...profileArgs,
   "projects", "api-keys",
-  "--workspace-id", configuration.SUPABASE_WORKSPACE_ID,
+  "--workspace-id", selectedWorkspaceId,
   "-o", "json",
 ];
-if (configuration.SUPABASE_BRANCH_ID) {
-  endpointArgs.push("--branch-id", configuration.SUPABASE_BRANCH_ID);
-  keyArgs.push("--branch-id", configuration.SUPABASE_BRANCH_ID);
+if (requestedBranchId) {
+  endpointArgs.push("--branch-id", requestedBranchId);
+  keyArgs.push("--branch-id", requestedBranchId);
 }
 
 const endpoints = parseJson(runCli(command, endpointArgs, environment), "Supabase endpoints list");
@@ -154,7 +238,9 @@ if (!key) throw new Error("目标 Workspace 未返回 Service Role Key。");
 const mode = configuration.APP_MODE === "development" ? "development" : "production";
 writeConfiguration({
   ...configuration,
-  SUPABASE_BRANCH_ID: configuration.SUPABASE_BRANCH_ID || endpoints.BranchId || "",
+  SUPABASE_CLI_PROFILE: profile,
+  SUPABASE_WORKSPACE_ID: selectedWorkspaceId,
+  SUPABASE_BRANCH_ID: requestedBranchId || endpoints.BranchId || "",
   SUPABASE_API_URL: apiOrigin,
   SUPABASE_SERVICE_ROLE_KEY: key,
   SUPABASE_RUN_ENABLED: "true",

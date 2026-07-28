@@ -152,9 +152,7 @@ export class OpenVikingProvider {
   get apiKey() {
     return this.env.value("OPENVIKING_API_KEY")
       || this.env.value("OPENVIKING_BEARER_TOKEN")
-      || (this.env.value("OPENVIKING_BASE_URL") ? this.env.value("AGENT_PLAN_API_KEY") : "")
       || this.cliConfig.api_key
-      || this.env.value("AGENT_PLAN_API_KEY")
       || "";
   }
 
@@ -229,7 +227,7 @@ export class OpenVikingProvider {
 
   async callRest(path, body = {}, options = {}) {
     if (!this.baseUrl || !this.apiKey) {
-      return providerFailure("openviking", { code: "missing_http_config", message: "OPENVIKING_BASE_URL and an OpenViking or Agent Plan API Key are not configured." });
+      return providerFailure("openviking", { code: "missing_http_config", message: "OPENVIKING_BASE_URL and an OpenViking API Key are not configured." });
     }
     const startedAt = Date.now();
     const controller = new AbortController();

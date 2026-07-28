@@ -18,7 +18,7 @@ function envReader(values = {}) {
   };
 }
 
-test("one Agent Plan key configures every plan-backed provider", () => {
+test("one Agent Plan key configures model, DataPro, web search and vision", () => {
   const env = envReader({
     AGENT_PLAN_API_KEY: "shared-agent-plan-key",
     OPENVIKING_BASE_URL: "https://openviking.example.test",
@@ -28,9 +28,11 @@ test("one Agent Plan key configures every plan-backed provider", () => {
   assert.equal(new ModelProvider({ env }).apiKey, "shared-agent-plan-key");
   assert.equal(new DataProProvider({ env }).apiKey, "shared-agent-plan-key");
   assert.equal(new WebSearchProvider({ env }).apiKey, "shared-agent-plan-key");
-  assert.equal(new OpenVikingProvider({ env }).apiKey, "shared-agent-plan-key");
-  assert.equal(new OpenVikingProvider({ env }).isConfigured(), true);
   assert.equal(new VisionProvider({ env }).apiKey, "shared-agent-plan-key");
+
+  const openViking = new OpenVikingProvider({ env, cliConfig: {} });
+  assert.equal(openViking.apiKey, "");
+  assert.equal(openViking.isConfigured(), false);
 });
 
 test("capability-specific keys remain optional overrides", () => {
@@ -46,7 +48,10 @@ test("capability-specific keys remain optional overrides", () => {
   assert.equal(new ModelProvider({ env }).apiKey, "model-override");
   assert.equal(new DataProProvider({ env }).apiKey, "datapro-override");
   assert.equal(new WebSearchProvider({ env }).apiKey, "search-override");
-  assert.equal(new OpenVikingProvider({ env }).apiKey, "openviking-override");
+  assert.equal(
+    new OpenVikingProvider({ env, cliConfig: {} }).apiKey,
+    "openviking-override",
+  );
   assert.equal(new VisionProvider({ env }).apiKey, "vision-override");
 });
 

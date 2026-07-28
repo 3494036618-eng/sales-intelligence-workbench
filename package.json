@@ -5,6 +5,9 @@
   "type": "module",
   "scripts": {
     "skill:install": "node scripts/install-codex-skill.mjs",
+    "skill:install:codex": "node scripts/install-codex-skill.mjs",
+    "skill:install:claude": "node scripts/install-claude-code-skill.mjs",
+    "skill:install:all": "node scripts/install-agent-skill.mjs --target all",
     "skill:command": "node scripts/print-public-skill-command.mjs",
     "skill:validate": "node scripts/validate-skill-package.mjs",
     "skill:test": "node scripts/test-skill-installer.mjs",

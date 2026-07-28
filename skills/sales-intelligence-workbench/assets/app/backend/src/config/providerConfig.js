@@ -78,7 +78,7 @@ export function getProviderStatus(options = {}) {
   const openVikingConfigExists = Boolean(openVikingCliConfigPath && existsSync(openVikingCliConfigPath));
   const openVikingCliPath = env.value("OPENVIKING_CLI") || (process.env.HOME ? join(process.env.HOME, "bin", "ov") : "ov");
   const openVikingCliExists = commandExists(openVikingCliPath);
-  const openVikingHttpConfigured = env.hasAny(["OPENVIKING_API_KEY", "OPENVIKING_BEARER_TOKEN", "AGENT_PLAN_API_KEY"])
+  const openVikingHttpConfigured = env.hasAny(["OPENVIKING_API_KEY", "OPENVIKING_BEARER_TOKEN"])
     && env.hasAny(["OPENVIKING_BASE_URL"]);
   const openVikingConfigured = openVikingHttpConfigured || openVikingConfigExists || openVikingCliExists;
   const modelRequired = [["ARK_API_KEY", "VOLCENGINE_ARK_API_KEY", "MODEL_API_KEY", "AGENT_PLAN_API_KEY"]];
@@ -124,7 +124,7 @@ export function getProviderStatus(options = {}) {
         mcp_url: env.value("DATAPRO_MCP_URL") || DEFAULTS.DATAPRO_MCP_URL,
         run_enabled: ["1", "true", "yes", "on"].includes(String(env.value("DATAPRO_RUN_ENABLED", "false")).toLowerCase()),
         max_sources: env.number("DATAPRO_MAX_SOURCES", 4),
-        timeout_ms: env.number("DATAPRO_TIMEOUT_MS", 30000),
+        timeout_ms: env.number("DATAPRO_TIMEOUT_MS", 60000),
         max_retries: env.number("DATAPRO_MAX_RETRIES", 1),
       },
     }),
@@ -152,11 +152,11 @@ export function getProviderStatus(options = {}) {
       status: openVikingConfigured ? "configured" : "missing_config",
       mode: "real",
       role: "飞书资料正文、资料问答 Session、长期记忆与企业内资料召回",
-      required_env: ["OPENVIKING_BASE_URL and AGENT_PLAN_API_KEY（OPENVIKING_API_KEY 可覆盖）, local ~/.openviking/ovcli.conf, or OPENVIKING_CLI"],
+      required_env: ["OpenViking CLI 配置（默认 ~/.openviking/ovcli.conf），或 OPENVIKING_BASE_URL + OPENVIKING_API_KEY"],
       optional_env: ["OPENVIKING_CLI", "OPENVIKING_CLI_CONFIG", "OPENVIKING_AGENT_ID", "OPENVIKING_RUN_ENABLED", "OPENVIKING_SALES_ROOT_URI", "OPENVIKING_FIND_LIMIT", "OPENVIKING_TIMEOUT_MS"],
-      configured_from: openVikingConfigured ? unique([...env.sources(["OPENVIKING_API_KEY", "OPENVIKING_BEARER_TOKEN", "AGENT_PLAN_API_KEY", "OPENVIKING_BASE_URL", "OPENVIKING_CLI", "OPENVIKING_CLI_CONFIG", "OPENVIKING_AGENT_ID", "OPENVIKING_RUN_ENABLED", "OPENVIKING_SALES_ROOT_URI", "OPENVIKING_FIND_LIMIT", "OPENVIKING_TIMEOUT_MS"]), openVikingConfigExists ? "local_openviking_cli_config" : null, openVikingCliExists ? "local_openviking_cli" : null].filter(Boolean)) : [],
-      missing: openVikingConfigured ? [] : ["OPENVIKING_BASE_URL + AGENT_PLAN_API_KEY / OPENVIKING_API_KEY, local ~/.openviking/ovcli.conf, or OPENVIKING_CLI"],
-      notes: ["状态接口不写入资料或会话。", "OpenViking 不承担企业、档案、任务和权限数据库角色。", "飞书正文与资料问答记忆写入由 OPENVIKING_RUN_ENABLED 控制。"],
+      configured_from: openVikingConfigured ? unique([...env.sources(["OPENVIKING_API_KEY", "OPENVIKING_BEARER_TOKEN", "OPENVIKING_BASE_URL", "OPENVIKING_CLI", "OPENVIKING_CLI_CONFIG", "OPENVIKING_AGENT_ID", "OPENVIKING_RUN_ENABLED", "OPENVIKING_SALES_ROOT_URI", "OPENVIKING_FIND_LIMIT", "OPENVIKING_TIMEOUT_MS"]), openVikingConfigExists ? "local_openviking_cli_config" : null, openVikingCliExists ? "local_openviking_cli" : null].filter(Boolean)) : [],
+      missing: openVikingConfigured ? [] : ["OpenViking CLI 配置，或 OPENVIKING_BASE_URL + OPENVIKING_API_KEY"],
+      notes: ["Agent Plan Harness 控制 AFP 抵扣，OpenViking 数据面仍使用 OpenViking API Key 认证。", "状态接口不写入资料或会话。", "OpenViking 不承担企业、档案、任务和权限数据库角色。", "飞书正文与资料问答记忆写入由 OPENVIKING_RUN_ENABLED 控制。"],
       safe_config: {
         cli_path: openVikingCliPath,
         agent_id: env.value("OPENVIKING_AGENT_ID") || DEFAULTS.OPENVIKING_AGENT_ID,

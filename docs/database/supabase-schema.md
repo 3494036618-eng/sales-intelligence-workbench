@@ -19,7 +19,7 @@ supabase/migrations/
 | 销售业务 | `sales_goals`、`sales_companies`、`sales_target_enterprises`、`sales_company_search_results`、`sales_progress_snapshots` |
 | 档案与引用 | `sales_dossier_records`、`sales_dossier_citations` |
 | 资料同步索引 | `sales_materials`、`sales_openviking_refs` |
-| 历史兼容表 | `sales_qa_messages`（新流程不再写入问答正文） |
+| 隔离迁移归档 | `sales_qa_messages_legacy`（不参与运行、备份或恢复） |
 | 任务与调用记录 | `jobs`、`paid_workflow_reservations`、`provider_runs`、`provider_run_steps` |
 | 同步与审计 | `sync_sources`、`sync_checkpoints`、`audit_events` |
 | 迁移历史 | `schema_migrations` |
@@ -58,7 +58,11 @@ supabase/migrations/
 - Supabase 保存企业、销售目标、档案、公开引用、任务、权限、审计，以及飞书来源/游标/内容指纹/OpenViking URI 等同步元数据。
 - 飞书会话与云文档正文只保存在 OpenViking；`sales_materials` 不重复保存正文。
 - 资料问答消息和长期上下文由 OpenViking Session 保存；Supabase 只保存会话索引与 Provider Run。
-- `sales_qa_messages` 仅用于旧数据兼容和迁移，不是新流程的事实来源。
+- `202607280001` 会把旧版 `sales_qa_messages` 改名为只允许 `service_role` 访问的
+  `sales_qa_messages_legacy`。迁移不删除历史数据，但当前运行、备份和恢复均不会读取或写入该归档。
+- `202607280002` 为项目自有的 `schema_migrations` 启用 RLS，并撤销普通角色权限。
+- `health_check` 是火山引擎 Supabase 的平台保留表，不属于项目迁移；验收脚本只核验它未向
+  `anon` 或 `authenticated` 开放，不尝试修改其所有权或 RLS。
 
 ## 迁移历史
 
@@ -75,10 +79,12 @@ supabase/migrations/
 | `202607230001` | 付费工作流原子预约、并发保护、每日次数保护和过期名额回收 |
 | `202607230002` | 持久化异步队列、Worker 领取/租约/心跳、进度与安全重试 |
 | `202607230003` | 运行任务安全取消检查点、取消期间租约续期与付费预约原子释放 |
+| `202607280001` | 隔离旧问答正文表，确立 OpenViking 为资料问答内容的唯一运行时存储 |
+| `202607280002` | 项目迁移元数据表启用 RLS，并仅授权后端 `service_role` |
 
 迁移器会读取远端 `schema_migrations`，只执行未应用文件；任何已应用迁移都不应被就地改写，应新增后续修正迁移。
 
-生产运行前必须把迁移应用到 `202607230003`。后端在 production 中找不到安全队列 RPC 时会返回 `503`，不会退回请求内假队列或绕过付费保护。
+生产运行前必须把迁移应用到 `202607280002`。后端在 production 中找不到该迁移时会返回 `503`，不会绕过内部表安全边界或重新启用 Supabase 问答正文兼容路径。
 
 应用迁移后可执行 `smoke-paid-workflow.mjs`。该检查会在数据库事务中调用预约和释放 RPC，验证 Job/预约状态后回滚，不留下测试记录，也不调用模型或 Harness。
 

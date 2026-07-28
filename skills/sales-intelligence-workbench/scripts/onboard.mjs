@@ -4,7 +4,6 @@ import path from "node:path";
 import {
   assertNodeVersion,
   paths,
-  readOption,
   run,
 } from "./lib.mjs";
 
@@ -27,12 +26,19 @@ function usage() {
   --from-env-file <路径>   从现有私密环境文件迁移配置
   --mode production        production 或 development
   --apply-supabase --yes   用户确认后初始化指定的 Agent Plan Supabase
+  --supabase-workspace-id <Workspace ID>
+  --supabase-branch-id <Branch ID>
+  --supabase-profile <CLI profile，默认 current>
+  --apply-openviking       复用已有 Agent Plan OpenViking 记忆库
+  --openviking-resource-id <ov-资源ID>
+  --openviking-collection-name <英文名称>  不存在时与 --yes 一起创建
   --confirm-live           用户知情后执行会产生少量用量的真实诊断
 
 说明：
   - 默认自动执行本地安装、配置引导和启动等可恢复步骤。
   - 遇到云资源写入、真实 Provider 调用、用户登录、飞书导入或业务验收时会暂停。
-  - 不会创建、暂停或删除 Supabase Workspace，也不会自动执行付费业务验收。
+  - 用户只输入一枚 Agent Plan Key；OpenViking 与 Supabase 内部连接信息由脚本自动获取和保存。
+  - 不会擅自创建、暂停或删除云资源，也不会自动执行付费业务验收。
 `;
 }
 
@@ -40,6 +46,7 @@ function parseArgs(argv) {
   const options = {
     help: false,
     applySupabase: false,
+    applyOpenViking: false,
     yes: false,
     confirmLive: false,
     workspaceName: "",
@@ -49,11 +56,17 @@ function parseArgs(argv) {
     deployment: "",
     fromEnvFile: "",
     mode: "production",
+    openVikingResourceId: "",
+    openVikingCollectionName: "",
+    supabaseWorkspaceId: "",
+    supabaseBranchId: "",
+    supabaseProfile: "",
   };
   const flags = new Map([
     ["--help", "help"],
     ["-h", "help"],
     ["--apply-supabase", "applySupabase"],
+    ["--apply-openviking", "applyOpenViking"],
     ["--yes", "yes"],
     ["--confirm-live", "confirmLive"],
   ]);
@@ -65,6 +78,11 @@ function parseArgs(argv) {
     ["--deployment", "deployment"],
     ["--from-env-file", "fromEnvFile"],
     ["--mode", "mode"],
+    ["--openviking-resource-id", "openVikingResourceId"],
+    ["--openviking-collection-name", "openVikingCollectionName"],
+    ["--supabase-workspace-id", "supabaseWorkspaceId"],
+    ["--supabase-branch-id", "supabaseBranchId"],
+    ["--supabase-profile", "supabaseProfile"],
   ]);
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -116,6 +134,9 @@ if (!["production", "development"].includes(options.mode)) {
 }
 if (options.applySupabase && !options.yes) {
   throw new Error("--apply-supabase 会写入目标数据库，必须同时提供 --yes。");
+}
+if (options.openVikingResourceId && options.openVikingCollectionName) {
+  throw new Error("--openviking-resource-id 与 --openviking-collection-name 只能选择一个。");
 }
 
 const scripts = path.join(paths.skillRoot, "scripts");
@@ -174,7 +195,7 @@ for (let step = 0; step < 12; step += 1) {
     continue;
   }
 
-  if (phase === "agent_plan" || phase === "openviking") {
+  if (phase === "agent_plan") {
     if (options.fromEnvFile) {
       run(process.execPath, [
         path.join(scripts, "configure.mjs"),
@@ -191,9 +212,41 @@ for (let step = 0; step < 12; step += 1) {
     process.exit(0);
   }
 
+  if (phase === "openviking") {
+    const openVikingScript = path.join(scripts, "setup-openviking.mjs");
+    if (options.applyOpenViking) {
+      const argumentsList = [openVikingScript, "--apply"];
+      if (options.openVikingResourceId) {
+        argumentsList.push("--resource-id", options.openVikingResourceId);
+      }
+      if (options.openVikingCollectionName) {
+        argumentsList.push("--collection-name", options.openVikingCollectionName);
+      }
+      if (options.yes) argumentsList.push("--yes");
+      run(process.execPath, argumentsList);
+      continue;
+    }
+    run(process.execPath, [openVikingScript]);
+    printCheckpoint(report);
+    process.stdout.write(
+      "复用已有记忆库时追加 --apply-openviking；需要新建时再提供英文名称并追加 --yes。\n",
+    );
+    process.exit(0);
+  }
+
   if (phase === "supabase") {
     if (options.applySupabase) {
-      run(process.execPath, [path.join(scripts, "setup-supabase.mjs"), "--apply", "--yes"]);
+      const argumentsList = [path.join(scripts, "setup-supabase.mjs"), "--apply", "--yes"];
+      if (options.supabaseWorkspaceId) {
+        argumentsList.push("--workspace-id", options.supabaseWorkspaceId);
+      }
+      if (options.supabaseBranchId) {
+        argumentsList.push("--branch-id", options.supabaseBranchId);
+      }
+      if (options.supabaseProfile) {
+        argumentsList.push("--profile", options.supabaseProfile);
+      }
+      run(process.execPath, argumentsList);
       continue;
     }
     printCheckpoint(report);

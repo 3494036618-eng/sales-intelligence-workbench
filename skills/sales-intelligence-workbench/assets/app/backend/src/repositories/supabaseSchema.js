@@ -326,16 +326,6 @@ create table if not exists public.sales_materials (
   payload_json jsonb not null default '{}'::jsonb
 );
 
-create table if not exists public.sales_qa_messages (
-  id text primary key,
-  company_id text not null,
-  session_id text,
-  role text not null,
-  text text not null,
-  created_at timestamptz not null default now(),
-  payload_json jsonb not null default '{}'::jsonb
-);
-
 create table if not exists public.sales_openviking_refs (
   id text primary key,
   company_id text,
@@ -362,6 +352,5 @@ create index if not exists sales_company_search_goal_idx on public.sales_company
 create index if not exists sales_dossier_company_idx on public.sales_dossier_records(company_id, created_at desc);
 create index if not exists sales_dossier_citations_idx on public.sales_dossier_citations(dossier_id);
 create index if not exists sales_materials_company_idx on public.sales_materials(company_id, updated_at desc);
-create index if not exists sales_qa_company_idx on public.sales_qa_messages(company_id, created_at);
 create index if not exists sales_openviking_refs_company_idx on public.sales_openviking_refs(company_id, created_at desc);
 `;

@@ -79,7 +79,7 @@ export class SupabaseDataRepository {
       const [migrations, workspaces] = await Promise.all([
         this.provider.select("schema_migrations", {
           select: "version",
-          filters: { version: "eq.202607230003" },
+          filters: { version: "eq.202607280002" },
           limit: 1,
         }),
         this.provider.select("app_workspaces", {
@@ -88,7 +88,7 @@ export class SupabaseDataRepository {
           limit: 1,
         }),
       ]);
-      if (!migrations.length) throw new Error("Supabase safe asynchronous job migration is not applied.");
+      if (!migrations.length) throw new Error("Supabase security boundary migration is not applied.");
       if (!workspaces.length) throw new Error(`Application workspace is not initialized: ${this.workspaceId}`);
       return true;
     })().catch((error) => {
@@ -489,21 +489,6 @@ export class SupabaseDataRepository {
       updated_at: checkpoint.updated_at || nowIso(),
     };
     return this.upsertScoped("sync_checkpoints", id, row);
-  }
-
-  async persistSalesQaMessage(company, message) {
-    const row = {
-      id: message.id,
-      workspace_id: this.workspaceId,
-      company_id: company.id,
-      session_id: company.qa_session_id || `sales-${company.id}`,
-      role: message.role,
-      text: message.text,
-      provider_run_id: message.provider_run_id || null,
-      created_at: message.created_at || nowIso(),
-      payload_json: message,
-    };
-    return this.upsertScoped("sales_qa_messages", message.id, row);
   }
 
   async persistSalesOpenVikingRef(record) {

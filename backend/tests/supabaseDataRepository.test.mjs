@@ -11,7 +11,7 @@ function createProvider(options = {}) {
     isConfigured: () => true,
     async select(table, query) {
       calls.push({ method: "select", table, query });
-      if (table === "schema_migrations") return [{ version: "202607230003" }];
+      if (table === "schema_migrations") return [{ version: "202607280002" }];
       if (table === "app_workspaces") return [{ id: workspaceId }];
       return options.select?.(table, query) || [];
     },

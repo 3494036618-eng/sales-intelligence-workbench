@@ -9,8 +9,9 @@
 | Cookbook 阶段 | Builder 动作 | 完成标准 |
 | --- | --- | --- |
 | 描述销售痛点 | 询问销售目标、客户范围、资料来源和部署方式 | `setup.mjs` 已记录业务范围 |
-| 配置 Agent Plan | 配置统一 Key、模型、DataPro、豆包搜索和 OpenViking | 本地配置完整，且全量 live doctor 通过 |
-| 准备业务数据层 | 连接北京地域的 Agent Plan Supabase，应用版本化迁移 | Workspace 属性、表结构和回读验证通过 |
+| 配置 Agent Plan | 用户只输入统一 Key，配置模型、DataPro、豆包搜索，并开启 OpenViking Harness | 本地套餐配置完整 |
+| 连接 OpenViking | 自动复用或经确认创建记忆库，等待 READY 并私密保存内部连接信息 | 用户未输入第二个 Key，OpenViking live doctor 通过 |
+| 准备业务数据层 | 用户完成火山账号 OAuth，脚本自动发现 Agent Plan Supabase、获取内部连接并应用版本化迁移 | 用户未输入 Supabase Key/AK-SK，Workspace 属性、表结构和回读验证通过 |
 | 获取历史资料 | 由 Codex CLI 调度用户态飞书 CLI 读取获授权资料 | 至少一次真实资料写入 Supabase 与 OpenViking |
 | 搭建工作台 | 安装随 Skill 发布、经过测试的完整前后端模板 | API 与独立 Worker 同时健康 |
 | 生成最新档案 | DataPro → 豆包搜索 → 证据整理与模型生成 → Supabase | 档案、引用、Provider Run 和版本记录可回读；飞书资料和 OpenViking 不作为外部事实来源 |
@@ -28,7 +29,7 @@ Skill 的职责是让不同用户基于自己的真实数据快速得到同一�
 3. 安装应用并检查离线测试。
 4. 交互式配置真实 Agent Plan 与 Harness。
 5. 在用户知情后创建或连接 Agent Plan Supabase。
-6. 配置 OpenViking；需要飞书资料时准备 `lark-cli`。
+6. 由 `setup-openviking.mjs` 自动连接 Agent Plan 记忆库；需要飞书资料时准备 `lark-cli`。
 7. 执行全量 `doctor.mjs --live`，逐项修复数据面。
 8. 启动 API 与 Worker，在浏览器创建首位管理员。
 9. 导入首批获授权历史资料。

@@ -1,61 +1,132 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const installer = path.join(root, "scripts", "install-codex-skill.mjs");
 const commandPrinter = path.join(root, "scripts", "print-public-skill-command.mjs");
 const temporaryHome = fs.mkdtempSync(path.join(os.tmpdir(), "sales-workbench-skill-"));
-const target = path.join(temporaryHome, "skills", "sales-intelligence-workbench");
-const environment = { ...process.env, CODEX_HOME: temporaryHome };
-const onboardingEnvironment = {
-  ...environment,
-  SALES_WORKBENCH_HOME: path.join(temporaryHome, "runtime"),
-  SALES_WORKBENCH_CONFIG_HOME: path.join(temporaryHome, "config"),
-  SALES_WORKBENCH_STATE_HOME: path.join(temporaryHome, "state"),
+const codexHome = path.join(temporaryHome, "codex");
+const claudeConfigDir = path.join(temporaryHome, "claude");
+const baseEnvironment = {
+  ...process.env,
+  HOME: temporaryHome,
 };
+const clients = [
+  {
+    label: "Codex",
+    script: "install-codex-skill.mjs",
+    environment: { CODEX_HOME: codexHome },
+    target: path.join(codexHome, "skills", "sales-intelligence-workbench"),
+    trigger: /\$sales-intelligence-workbench/,
+  },
+  {
+    label: "Claude Code",
+    script: "install-claude-code-skill.mjs",
+    environment: { CLAUDE_CONFIG_DIR: claudeConfigDir },
+    target: path.join(claudeConfigDir, "skills", "sales-intelligence-workbench"),
+    trigger: /\/sales-intelligence-workbench/,
+  },
+];
 
-function run(args, expectedStatus) {
-  const result = spawnSync(process.execPath, [installer, ...args], {
+function run(client, args, expectedStatus) {
+  const result = spawnSync(process.execPath, [
+    path.join(root, "scripts", client.script),
+    ...args,
+  ], {
     cwd: root,
-    env: environment,
+    env: { ...baseEnvironment, ...client.environment },
     encoding: "utf8",
   });
   assert.equal(
     result.status,
     expectedStatus,
-    `安装器退出码异常。\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`,
+    `${client.label} 安装器退出码异常。\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`,
   );
   return result;
 }
 
-try {
-  run([], 0);
-  const installedSkillPath = path.join(target, "SKILL.md");
+function assertInstalled(client) {
+  const installedSkillPath = path.join(client.target, "SKILL.md");
   assert.ok(fs.existsSync(installedSkillPath));
-  assert.ok(fs.existsSync(path.join(target, "scripts", "onboard.mjs")));
-  assert.equal(fs.existsSync(path.join(target, ".DS_Store")), false);
+  assert.ok(fs.existsSync(path.join(client.target, "scripts", "onboard.mjs")));
+  assert.ok(fs.existsSync(path.join(client.target, "assets", "app", "backend", ".env.example")));
+  assert.equal(fs.existsSync(path.join(client.target, ".DS_Store")), false);
   const installedSkill = fs.readFileSync(installedSkillPath, "utf8");
   assert.match(installedSkill, /## 远程 Skill 入口/);
-  assert.match(
-    installedSkill,
-    /skills\/sales-intelligence-workbench\/SKILL\.md/,
-  );
+  assert.match(installedSkill, /skills\/sales-intelligence-workbench\/SKILL\.md/);
   assert.match(installedSkill, /node scripts\/validate-skill-package\.mjs/);
   assert.match(installedSkill, /node scripts\/test-skill-installer\.mjs/);
+}
 
-  const help = spawnSync(process.execPath, [path.join(target, "scripts", "onboard.mjs"), "--help"], {
-    env: environment,
+try {
+  for (const client of clients) {
+    const installed = run(client, [], 0);
+    assert.match(installed.stdout, new RegExp(`${client.label} Skill 已安装`));
+    assert.match(installed.stdout, client.trigger);
+    assertInstalled(client);
+
+    const duplicate = run(client, [], 1);
+    assert.match(duplicate.stderr, /Skill 已存在/);
+    run(client, ["--force"], 0);
+    assertInstalled(client);
+  }
+
+  const allSandbox = path.join(temporaryHome, "all");
+  const allResult = spawnSync(process.execPath, [
+    path.join(root, "scripts", "install-agent-skill.mjs"),
+    "--target",
+    "all",
+  ], {
+    cwd: root,
+    env: {
+      ...baseEnvironment,
+      CODEX_HOME: path.join(allSandbox, "codex"),
+      CLAUDE_CONFIG_DIR: path.join(allSandbox, "claude"),
+    },
+    encoding: "utf8",
+  });
+  assert.equal(allResult.status, 0, allResult.stderr || allResult.stdout);
+  assert.match(allResult.stdout, /Codex Skill 已安装/);
+  assert.match(allResult.stdout, /Claude Code Skill 已安装/);
+  assert.ok(fs.existsSync(path.join(
+    allSandbox,
+    "codex",
+    "skills",
+    "sales-intelligence-workbench",
+    "SKILL.md",
+  )));
+  assert.ok(fs.existsSync(path.join(
+    allSandbox,
+    "claude",
+    "skills",
+    "sales-intelligence-workbench",
+    "SKILL.md",
+  )));
+
+  const onboardingEnvironment = {
+    ...baseEnvironment,
+    CODEX_HOME: codexHome,
+    PORT: process.env.SKILL_TEST_PORT || "18787",
+    SALES_WORKBENCH_HOME: path.join(temporaryHome, "runtime"),
+    SALES_WORKBENCH_CONFIG_HOME: path.join(temporaryHome, "config"),
+    SALES_WORKBENCH_STATE_HOME: path.join(temporaryHome, "state"),
+  };
+  const codexTarget = clients[0].target;
+  const help = spawnSync(process.execPath, [
+    path.join(codexTarget, "scripts", "onboard.mjs"),
+    "--help",
+  ], {
+    env: onboardingEnvironment,
     encoding: "utf8",
   });
   assert.equal(help.status, 0, help.stderr);
   assert.match(help.stdout, /安全编排/);
 
   const onboarding = spawnSync(process.execPath, [
-    path.join(target, "scripts", "onboard.mjs"),
+    path.join(codexTarget, "scripts", "onboard.mjs"),
     "--workspace-name", "隔离验收工作台",
     "--sales-goal", "验证 Skill 部署入口",
     "--target-scope", "测试企业",
@@ -77,17 +148,13 @@ try {
   assert.equal(fs.existsSync(path.join(onboardingEnvironment.SALES_WORKBENCH_CONFIG_HOME, "credentials.env")), false);
   assert.equal(fs.existsSync(path.join(onboardingEnvironment.SALES_WORKBENCH_STATE_HOME, "doctor-live.json")), false);
 
-  const duplicate = run([], 1);
-  assert.match(duplicate.stderr, /Skill 已存在/);
-  run(["--force"], 0);
-
   const publicCommand = spawnSync(process.execPath, [
     commandPrinter,
     "--repository", "https://github.com/example/sales-workbench",
     "--ref", "v0.9.0",
   ], {
     cwd: root,
-    env: environment,
+    env: baseEnvironment,
     encoding: "utf8",
   });
   assert.equal(publicCommand.status, 0, publicCommand.stderr);
@@ -103,13 +170,15 @@ try {
     "--ref", "main",
   ], {
     cwd: root,
-    env: environment,
+    env: baseEnvironment,
     encoding: "utf8",
   });
   assert.equal(mutableCommand.status, 1);
   assert.match(mutableCommand.stderr, /不能使用 main\/master/);
 
-  process.stdout.write("Skill 隔离安装、重复安装保护、强制更新和安全 onboarding 推进检查通过。\n");
+  process.stdout.write(
+    "Codex 与 Claude Code Skill 隔离安装、双端安装、重复安装保护、强制更新和安全 onboarding 检查通过。\n",
+  );
 } finally {
   fs.rmSync(temporaryHome, { recursive: true, force: true });
 }

@@ -17,37 +17,39 @@
 - [x] 后端自动化测试全部通过，发布密钥扫描不输出密钥原文。
 - [x] Skill 分发包与仓库源码一致，隔离安装、重复安装保护、更新、启动、停止和卸载通过。
 - [ ] 在一台没有本项目历史配置的机器上，从一句话 Skill 完成下载、校验、安装、配置和网站启动。
-- [ ] 仓库不包含真实 API Key、AK/SK、Service Role、用户资料、备份、录屏、内部交接文档或系统文件。
-- [ ] `CHANGELOG.md`、`THIRD_PARTY_NOTICES.md`、README、Skill 和待发布代码的能力边界一致。
+- [x] 仓库不包含真实 API Key、AK/SK、Service Role、用户资料、备份、录屏、内部交接文档或系统文件。
+- [x] `CHANGELOG.md`、`THIRD_PARTY_NOTICES.md`、README、Skill 和待发布代码的能力边界一致。
 
 ### 数据库与任务队列
 
-- [ ] 目标 Agent Plan Supabase 已应用到 `202607230003`，迁移后再次只读查询版本。
-- [ ] `smoke-paid-workflow.mjs` 与 `smoke-async-job-queue.mjs` 通过；两者事务回滚，不调用模型或 Harness。
-- [ ] API 与 Worker 同时运行，`status.mjs` 中 `running`、`worker_running` 均为 `true`。
-- [ ] 页面刷新、切换企业和重启 API 后仍能恢复已持久化的任务进度。
+- [x] 目标 Agent Plan Supabase 已应用到 `202607280002`，迁移后再次只读查询版本，并确认旧问答正文只读归档、内部元数据表启用 RLS。
+- [x] `smoke-paid-workflow.mjs` 与 `smoke-async-job-queue.mjs` 通过；两者事务回滚，不调用模型或 Harness。
+- [x] API 与 Worker 同时运行，`status.mjs` 中 `running`、`worker_running` 均为 `true`。
+- [x] 重启 API 与 Worker 后，仍能读取同一企业、6 份档案和 16 条问答消息。
+- [x] 在浏览器中验证目标创建、企业搜索入池、档案生成、历史归档、资料问答、页面刷新和目标切换隔离。
+- [ ] 在浏览器任务执行期间重启 API 与 Worker，并验证进度恢复。
 - [ ] 运行中取消先进入“正在取消”，Worker 到安全检查点后才释放预约并允许重试。
 - [ ] 完成一次备份、校验和隔离恢复演练。
 
 ### 真实业务链路
 
-- [ ] 使用私密 CLI 登录态执行 `verify-business-chain.mjs --confirm-live`；输出 `ok: true`，且未暴露内部存储字段。
-- [ ] 使用获授权测试企业跑通 DataPro 企业识别、搜索结果确认和目标企业入池。
-- [ ] 跑通专业数据、豆包搜索、模型、OpenViking 检索/写入和 Supabase 持久化，并保存 Provider Run 证据。
+- [x] 使用私密 CLI 登录态执行 `verify-business-chain.mjs --confirm-live`；输出 `ok: true`，且未暴露内部存储字段。
+- [x] 使用获授权测试企业跑通 DataPro 企业识别、豆包搜索补充、搜索结果确认和目标企业入池。
+- [x] 跑通专业数据、豆包搜索、模型、OpenViking 检索/写入和 Supabase 持久化，并保存 Provider Run 证据。
 - [ ] 跑通 Codex CLI 调度飞书 CLI 的云文档、群聊或单聊资料增量导入。
-- [ ] 在业务前端提交飞书会话和云文档导入；页面不显示 CLI 命令、凭证或内部 URI。
+- [x] 在业务前端提交飞书会话和云文档导入；页面不显示 CLI 命令、凭证或内部 URI。
 - [ ] 重启 API 后，从 OpenViking 恢复已导入正文与多轮问答；确认 Supabase 资料/会话记录不包含正文。
 - [ ] 验证档案每条关键结论有真实引用；高风险事实、日期和冲突数字符合证据规则。
 - [ ] 验证问答只能引用当前企业目录中的档案和飞书资料，不跨企业召回。
-- [ ] 记录真实调用产生的 AFP/Token；发布文案不使用未实测的成本数字。
+- [x] 记录真实调用产生的 Token；发布文案不使用未实测的 AFP 或金额数字。
 
 ### 安全、法律与运营
 
 - [ ] 代码所有方确认代码产权边界和开源授权，并批准根目录 `LICENSE`。
-- [ ] `service_role`、Agent Plan Key 和 AK/SK 只存在于本机私密配置，浏览器和公开 API 均不可读取。
-- [ ] 本机或受控内网入口启用身份认证、CSRF、防跨域和请求限制；服务默认只监听回环地址。
-- [ ] 执行 Supabase 安全检查，确认公开表启用 RLS，管理 RPC 仅授予 `service_role`。
-- [ ] README 明确单工作区、单人、自托管 Beta 边界、费用保护口径、已知限制、数据删除方式和漏洞反馈渠道。
+- [x] `service_role`、Agent Plan Key 和 AK/SK 只存在于本机私密配置，浏览器和公开 API 均不可读取。
+- [x] 本机或受控内网入口启用身份认证、CSRF、防跨域和请求限制；服务默认只监听回环地址。
+- [x] 执行 Supabase 安全检查，确认公开业务表启用 RLS，管理 RPC 仅授予 `service_role`。
+- [x] README 明确单工作区、单人、自托管 Beta 边界、费用保护口径、已知限制、数据删除方式和漏洞反馈渠道。
 - [ ] 准备回滚方案：保留上一版本安装包、数据库备份和停止 Worker 的操作步骤。
 
 ## 后续公网生产门槛
@@ -73,4 +75,11 @@
 
 ### 已留存的本地证据
 
-- 2026-07-28：仓库根目录 `npm run verify` 通过；后端测试 `208/208`，离线发布验收 `6/6`，Skill 校验、隔离安装生命周期与发布密钥扫描均通过。执行环境为当前开发机，不替代干净环境和真实业务验收。
+- 2026-07-28：仓库根目录 `npm run verify` 通过；后端测试 `228/228`，离线发布验收 `6/6`，Skill 校验、隔离安装生命周期与发布密钥扫描均通过。执行环境为当前开发机，不替代干净环境验收。
+- 2026-07-28：`doctor.mjs --live` 在允许联网的真实环境中验证模型、DataPro、豆包搜索、OpenViking 和 Supabase，结果均为成功；该结果是时间点证据，不构成上游 SLA。
+- 2026-07-28：目标 Supabase 迁移只读检查无待执行版本；付费预约与异步队列 smoke 均通过并事务回滚，Provider 调用数为 0；API 与独立 Worker 均运行。
+- 2026-07-28：在同一开发机的全新临时 HOME 和 CODEX_HOME 中，从当前源码安装 Skill 和完整应用，安装过程停在仅需用户输入一个 Agent Plan Key 的第 4/11 阶段；未复用宿主凭证。该结果不替代最终公开 URL 在另一台干净机器上的验收。
+- 2026-07-28：使用全新企业“北京火山引擎科技有限公司”完成 DataPro 主体核验、豆包搜索、目标企业入池、档案 V5 和资料问答，结果 `ok: true`；本轮模型合计 `52,483 tokens`。
+- 2026-07-28：重启 API 与 Worker 后只读确认同一企业、5 份档案和 14 条问答消息仍可读取；随后生成档案 V6 和新问答，Supabase 持久化、OpenViking 会话恢复/检索/写入/长期记忆提交均成功，本轮模型合计 `54,907 tokens`。档案本体按设计仅由 Supabase 保存，不重复写入 OpenViking。
+- 2026-07-28：在 `http://127.0.0.1:8787` 以登录用户完成浏览器端到端验收：新建销售目标、搜索并加入“北京火山引擎科技有限公司”、生成档案 V7、在历史资料中确认 V7 归档、提交资料问答并确认问题先显示且来源合并为一项；刷新页面后目标、企业、V7 和问答均保留，切换其他目标再返回后企业数据未串用。浏览器控制台无 `error` 或 `warn`。
+- 2026-07-28：切换至另一 Agent Plan 账号后，复用该账号已有 OpenViking 实例，并以同一个 Agent Plan Key 完成模型、DataPro、豆包搜索、OpenViking、Agent Plan Supabase 全链路诊断；随后对获授权企业生成档案 V8 并完成资料问答，Provider Run 全部成功，Supabase 档案与 OpenViking 问答记忆均已持久化，本轮模型合计 `52,809 tokens`。
