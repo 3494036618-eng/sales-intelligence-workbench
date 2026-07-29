@@ -104,12 +104,6 @@ try {
     "真实只读诊断使用的企业名称",
     existing.LIVE_PROBE_COMPANY || "北京火山引擎科技有限公司",
   );
-  const authRedirectUrl = await visibleQuestion(
-    rl,
-    "密码重置回跳 URL（需加入 Supabase Auth 允许列表）",
-    existing.AUTH_REDIRECT_URL || "http://127.0.0.1:8787/",
-  );
-
   writeConfiguration({
     ...existing,
     AGENT_PLAN_API_KEY: agentPlanKey,
@@ -132,7 +126,6 @@ try {
     FEISHU_CLI_IMPORT_ENABLED: /^true|1|yes$/i.test(feishuAnswer) ? "true" : "false",
     FEISHU_SYNC_ENABLED: /^true|1|yes$/i.test(feishuAnswer) ? "true" : "false",
     LIVE_PROBE_COMPANY: liveProbeCompany,
-    AUTH_REDIRECT_URL: authRedirectUrl,
   });
 
   process.stdout.write(`私密凭证已写入 ${paths.credentialsFile}（0600）。\n`);

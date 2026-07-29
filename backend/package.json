@@ -1,6 +1,6 @@
 {
   "name": "sales-intelligence-workbench-api",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "private": true,
   "type": "module",
   "scripts": {
@@ -23,6 +23,7 @@
     "baseline:real:live": "node scripts/baseline-real-readonly.mjs --live",
     "verify:business": "node scripts/verify-business-chain.mjs",
     "workspace:export": "node scripts/export-workspace.mjs",
+    "auth:reset-password": "node scripts/reset-local-password.mjs",
     "preflight:real": "node scripts/preflight-real.mjs",
     "smoke:stage2-data-api": "node scripts/smoke-stage2-data-api.mjs",
     "smoke:stage3-material-sync": "node scripts/smoke-stage3-material-sync.mjs",

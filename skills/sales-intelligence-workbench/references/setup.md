@@ -25,7 +25,7 @@
 2. `configure.mjs` 只收集一枚 Agent Plan Key 和业务选项。
 3. `setup-supabase.mjs` 查看 AI Native 应用开发底座（Supabase）初始化计划。
 4. 用户确认目标后运行 `setup-supabase.mjs --apply --yes`，自动获取 Data API 配置、执行迁移、创建应用 Workspace 记录并回读。
-5. 配置 Supabase Auth 密码恢复和受保护的本机或内网入口；当前 Beta 是单工作区、单人使用模式。
+5. 启动后在页面设置唯一的本机管理员用户名和密码；不配置邮箱、邮件确认或公开注册。
 6. 运行 `doctor.mjs`。
 7. 告知用户会产生少量用量后运行 `doctor.mjs --live`。
 8. 运行 `start.mjs`，确认 API 与 Worker 均启动，再从 `status.mjs` 获取网址。

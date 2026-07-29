@@ -18,12 +18,28 @@ function normalizeEmail(value) {
   return String(value || "").trim().toLowerCase();
 }
 
+function normalizeUsername(value) {
+  return String(value || "").trim().replace(/\s+/g, " ");
+}
+
 function validateEmail(value) {
   const email = normalizeEmail(value);
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     throw new HttpError(400, "invalid_email", "请输入有效的邮箱地址。");
   }
   return email;
+}
+
+function validateUsername(value) {
+  const username = normalizeUsername(value);
+  if (
+    username.length < 2
+    || username.length > 40
+    || /[@\u0000-\u001f\u007f]/u.test(username)
+  ) {
+    throw new HttpError(400, "invalid_username", "用户名需要为 2 至 40 个字符，不能包含 @ 或控制字符。");
+  }
+  return username;
 }
 
 function validatePassword(value) {
@@ -34,15 +50,9 @@ function validatePassword(value) {
   return password;
 }
 
-function normalizeRedirectUrl(value) {
-  const text = String(value || "").trim();
-  if (!text) return "";
-  try {
-    const url = new URL(text);
-    return ["http:", "https:"].includes(url.protocol) ? url.toString() : "";
-  } catch {
-    return "";
-  }
+function internalOwnerEmail(workspaceId) {
+  const suffix = createHash("sha256").update(String(workspaceId || "")).digest("hex").slice(0, 24);
+  return `owner-${suffix}@sales-workbench.invalid`;
 }
 
 function parseCookies(header = "") {
@@ -106,26 +116,29 @@ function auditFilter(value, name, maxLength) {
 
 function safeAuthError(status, body, context = "session") {
   const code = String(body?.error_code || body?.code || body?.error || `auth_http_${status}`);
-  if (context === "password_update" && (status === 400 || status === 401 || status === 403)) {
-    return new HttpError(401, "recovery_link_invalid", "密码重置链接无效或已经过期。");
-  }
   if (status === 400 || status === 401) {
-    return new HttpError(401, "invalid_credentials", "邮箱或密码不正确，或登录会话已经过期。");
+    return new HttpError(401, "invalid_credentials", "用户名或密码不正确，或登录会话已经过期。");
   }
   if (status === 422 || /already|registered|exists/i.test(String(body?.msg || body?.message || ""))) {
-    return new HttpError(409, "account_exists", "该邮箱已经注册，请直接登录。");
+    return new HttpError(409, "account_exists", "管理员账号已经创建，请直接登录。");
   }
   return new HttpError(502, "auth_provider_error", "身份服务暂时不可用，请稍后重试。", { provider_code: code });
 }
 
-function validateCredentials(body, { bootstrap = false } = {}) {
-  const email = validateEmail(body?.email);
+function validateLoginCredentials(body) {
+  const identifier = String(body?.username || body?.account || body?.email || "").trim();
+  if (!identifier) throw new HttpError(400, "username_required", "请输入用户名。");
   const password = validatePassword(body?.password);
-  const displayName = String(body?.display_name || "").trim().slice(0, 80);
-  if (bootstrap && !displayName) {
-      throw new HttpError(400, "display_name_required", "首次创建个人账号时需要填写姓名。");
-  }
-  return { email, password, displayName };
+  return { identifier, password };
+}
+
+function publicUser(principal) {
+  if (!principal) return null;
+  return {
+    id: principal.id,
+    username: principal.username,
+    display_name: principal.display_name,
+  };
 }
 
 export class AuthService {
@@ -139,7 +152,6 @@ export class AuthService {
     this.authEnabled = enabled(this.env?.value?.("HTTP_AUTH_ENABLED", "false"));
     this.bootstrapEnabled = enabled(this.env?.value?.("AUTH_BOOTSTRAP_ENABLED", "true"));
     this.cookieSecure = enabled(this.env?.value?.("AUTH_COOKIE_SECURE", "false"));
-    this.authRedirectUrl = normalizeRedirectUrl(this.env?.value?.("AUTH_REDIRECT_URL", ""));
     this.timeoutMs = this.env?.number?.("AUTH_PROVIDER_TIMEOUT_MS", 12000) || 12000;
     this.cacheTtlMs = this.env?.number?.("AUTH_SESSION_CACHE_TTL_MS", 15000) || 15000;
     this.refreshMaxAge = this.env?.number?.("AUTH_REFRESH_COOKIE_MAX_AGE", 2592000) || 2592000;
@@ -204,12 +216,51 @@ export class AuthService {
 
   async isBootstrapRequired() {
     if (!this.authEnabled || !this.bootstrapEnabled || !this.isConfigured()) return false;
-    const members = await this.dataProvider.select("app_workspace_members", {
+    const bindings = await this.dataProvider.select("app_workspace_members", {
       select: "user_id",
       filters: { workspace_id: `eq.${this.workspaceId}` },
       limit: 1,
     });
-    return !Array.isArray(members) || members.length === 0;
+    return !Array.isArray(bindings) || bindings.length === 0;
+  }
+
+  async singleLoginAccount() {
+    const bindings = await this.dataProvider.select("app_workspace_members", {
+      select: "workspace_id,user_id,role",
+      filters: {
+        workspace_id: `eq.${this.workspaceId}`,
+      },
+      limit: 2,
+    });
+    if (!Array.isArray(bindings) || bindings.length !== 1) {
+      throw new HttpError(503, "single_user_account_invalid", "本机管理员账号状态异常，请运行密码重置命令检查账号。");
+    }
+    const binding = bindings[0];
+    const profiles = await this.dataProvider.select("app_users", {
+      select: "id,display_name",
+      filters: { id: `eq.${binding.user_id}` },
+      limit: 1,
+    });
+    const username = normalizeUsername(profiles?.[0]?.display_name || "");
+    if (!username) {
+      throw new HttpError(503, "single_user_account_invalid", "本机管理员用户名缺失，请运行密码重置命令检查账号。");
+    }
+    return { id: binding.user_id, username };
+  }
+
+  async resolveLoginEmail(identifier) {
+    if (String(identifier).includes("@")) return validateEmail(identifier);
+    const username = validateUsername(identifier);
+    const account = await this.singleLoginAccount();
+    if (normalizeUsername(account.username).toLowerCase() !== username.toLowerCase()) {
+      throw new HttpError(401, "invalid_credentials", "用户名或密码不正确，或登录会话已经过期。");
+    }
+    const result = await this.authRequest(`admin/users/${encodeURIComponent(account.id)}`);
+    const user = result?.user || result;
+    if (!user?.email) {
+      throw new HttpError(503, "single_user_account_invalid", "本机管理员账号无法登录，请运行密码重置命令检查账号。");
+    }
+    return validateEmail(user.email);
   }
 
   async principalForUser(user) {
@@ -233,7 +284,8 @@ export class AuthService {
     return Object.freeze({
       id: user.id,
       email: normalizeEmail(user.email),
-      display_name: String(profiles?.[0]?.display_name || user.user_metadata?.display_name || user.email || "用户").slice(0, 80),
+      username: normalizeUsername(profiles?.[0]?.display_name || user.user_metadata?.username || user.user_metadata?.display_name || "管理员"),
+      display_name: normalizeUsername(profiles?.[0]?.display_name || user.user_metadata?.username || user.user_metadata?.display_name || "管理员"),
       workspace_id: membership.workspace_id,
       role: membership.role,
     });
@@ -250,13 +302,17 @@ export class AuthService {
     return principal;
   }
 
-  async passwordSession(email, password) {
+  async passwordSessionByEmail(email, password) {
     const session = await this.authRequest("token?grant_type=password", {
       method: "POST",
       body: { email, password },
     });
     const principal = await this.verifyAccessToken(session.access_token);
     return { ...session, principal };
+  }
+
+  async passwordSession(identifier, password) {
+    return this.passwordSessionByEmail(await this.resolveLoginEmail(identifier), password);
   }
 
   async refreshSession(refreshToken) {
@@ -400,41 +456,6 @@ export class AuthService {
     }));
   }
 
-  async requestPasswordRecovery(body) {
-    if (!this.authEnabled) throw new HttpError(409, "auth_disabled", "当前配置未启用登录。");
-    const email = validateEmail(body?.email);
-    const redirect = this.authRedirectUrl ? `?redirect_to=${encodeURIComponent(this.authRedirectUrl)}` : "";
-    await this.authRequest(`recover${redirect}`, {
-      method: "POST",
-      body: { email },
-      context: "password_recovery",
-    });
-    return { accepted: true };
-  }
-
-  async updatePassword(body, req, res) {
-    if (!this.authEnabled) throw new HttpError(409, "auth_disabled", "当前配置未启用登录。");
-    const password = validatePassword(body?.password);
-    const authorization = String(req.headers?.authorization || "");
-    const accessToken = authorization.match(/^Bearer\s+(.+)$/i)?.[1]?.trim() || "";
-    if (!accessToken || accessToken.length > 8192) {
-      throw new HttpError(401, "recovery_link_invalid", "密码重置链接无效或已经过期。");
-    }
-    const principal = await this.verifyAccessToken(accessToken).catch((error) => {
-      if (error?.status === 403) throw error;
-      throw new HttpError(401, "recovery_link_invalid", "密码重置链接无效或已经过期。");
-    });
-    await this.authRequest("user", {
-      method: "PUT",
-      accessToken,
-      body: { password },
-      context: "password_update",
-    });
-    this.cache.delete(tokenHash(accessToken));
-    this.clearSessionCookies(res);
-    return { updated: true, email: principal.email };
-  }
-
   assertCsrf(req, auth) {
     if (!this.authEnabled || auth?.source !== "cookie") return;
     const cookies = parseCookies(req.headers?.cookie);
@@ -451,7 +472,7 @@ export class AuthService {
         enabled: false,
         authenticated: true,
         bootstrap_required: false,
-        user: { display_name: "本地开发者", role: "owner" },
+        user: { username: "本机管理员", display_name: "本机管理员" },
       };
     }
     this.assertConfigured();
@@ -469,24 +490,19 @@ export class AuthService {
       authenticated: Boolean(auth?.principal),
       bootstrap_required: bootstrapRequired,
       csrf_token: auth?.source === "cookie" ? cookies[this.cookieNames.csrf] || "" : "",
-      user: auth?.principal ? {
-        id: auth.principal.id,
-        email: auth.principal.email,
-        display_name: auth.principal.display_name,
-        role: auth.principal.role,
-      } : null,
+      user: publicUser(auth?.principal),
     };
   }
 
   async login(body, res) {
     if (!this.authEnabled) throw new HttpError(409, "auth_disabled", "当前配置未启用登录。");
-    const { email, password } = validateCredentials(body);
-    const session = await this.passwordSession(email, password);
+    const { identifier, password } = validateLoginCredentials(body);
+    const session = await this.passwordSession(identifier, password);
     const csrfToken = this.setSessionCookies(res, session);
     return {
       authenticated: true,
       csrf_token: csrfToken,
-      user: session.principal,
+      user: publicUser(session.principal),
     };
   }
 
@@ -496,14 +512,14 @@ export class AuthService {
       access_token: session.access_token,
       refresh_token: session.refresh_token,
       expires_in: Math.max(60, Number(session.expires_in) || 3600),
-      user: session.principal,
+      user: publicUser(session.principal),
     };
   }
 
   async cliLogin(body) {
     if (!this.authEnabled) throw new HttpError(409, "auth_disabled", "当前配置未启用登录。");
-    const { email, password } = validateCredentials(body);
-    return this.cliSessionPayload(await this.passwordSession(email, password));
+    const { identifier, password } = validateLoginCredentials(body);
+    return this.cliSessionPayload(await this.passwordSession(identifier, password));
   }
 
   async cliRefresh(body) {
@@ -521,7 +537,7 @@ export class AuthService {
     }
     if (this.bootstrapPromise) {
       await this.bootstrapPromise.catch(() => {});
-      throw new HttpError(409, "bootstrap_completed", "个人账号已经创建，请直接登录。");
+      throw new HttpError(409, "bootstrap_completed", "本机管理员已经创建，请直接登录。");
     }
     this.bootstrapPromise = this.bootstrapAccount(body, res);
     try {
@@ -534,22 +550,24 @@ export class AuthService {
   async bootstrapAccount(body, res) {
     this.assertConfigured();
     if (!(await this.isBootstrapRequired())) {
-      throw new HttpError(409, "bootstrap_completed", "个人账号已经创建，请直接登录。");
+      throw new HttpError(409, "bootstrap_completed", "本机管理员已经创建，请直接登录。");
     }
-    const { email, password, displayName } = validateCredentials(body, { bootstrap: true });
+    const username = validateUsername(body?.username || body?.display_name);
+    const password = validatePassword(body?.password);
+    const email = internalOwnerEmail(this.workspaceId);
     const created = await this.authRequest("admin/users", {
       method: "POST",
       body: {
         email,
         password,
         email_confirm: true,
-        user_metadata: { display_name: displayName },
+        user_metadata: { display_name: username, username },
       },
     });
     const user = created.user || created;
     if (!user?.id) throw new HttpError(502, "auth_provider_error", "身份服务没有返回有效账号。");
     try {
-      await this.dataProvider.upsert("app_users", [{ id: user.id, display_name: displayName }], { onConflict: "id" });
+      await this.dataProvider.upsert("app_users", [{ id: user.id, display_name: username }], { onConflict: "id" });
       await this.dataProvider.upsert("app_workspace_members", [{
         workspace_id: this.workspaceId,
         user_id: user.id,
@@ -565,13 +583,26 @@ export class AuthService {
         provider_code: String(error?.code || "persistence_failed").slice(0, 80),
       });
     }
-    const session = await this.passwordSession(email, password);
+    const session = await this.passwordSessionByEmail(email, password);
     const csrfToken = this.setSessionCookies(res, session);
     return {
       authenticated: true,
       csrf_token: csrfToken,
-      user: session.principal,
+      user: publicUser(session.principal),
     };
+  }
+
+  async resetOwnerPassword(passwordValue) {
+    if (!this.authEnabled) throw new HttpError(409, "auth_disabled", "当前配置未启用登录。");
+    this.assertConfigured();
+    const password = validatePassword(passwordValue);
+    const account = await this.singleLoginAccount();
+    await this.authRequest(`admin/users/${encodeURIComponent(account.id)}`, {
+      method: "PUT",
+      body: { password },
+    });
+    this.cache.clear();
+    return { updated: true, username: account.username };
   }
 
   async refresh(req, res) {
@@ -579,7 +610,7 @@ export class AuthService {
     const cookies = parseCookies(req.headers?.cookie);
     const session = await this.refreshSession(cookies[this.cookieNames.refresh]);
     const csrfToken = this.setSessionCookies(res, session, cookies[this.cookieNames.csrf] || undefined);
-    return { authenticated: true, csrf_token: csrfToken, user: session.principal };
+    return { authenticated: true, csrf_token: csrfToken, user: publicUser(session.principal) };
   }
 
   async logout(req, res) {

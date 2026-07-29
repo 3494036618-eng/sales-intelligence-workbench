@@ -23,6 +23,8 @@ const requiredSkillFiles = [
   "scripts/setup-supabase.mjs",
   "scripts/doctor.mjs",
   "scripts/start.mjs",
+  "scripts/login.mjs",
+  "scripts/reset-password.mjs",
   "scripts/import-feishu.mjs",
   "scripts/verify-business-chain.mjs",
   "references/cookbook-workflow.md",
@@ -55,6 +57,7 @@ assert.match(agent, /\$sales-intelligence-workbench/);
 assert.match(agent, /allow_implicit_invocation:\s*true/);
 assert.match(skill, /onboard\.mjs/);
 assert.match(skill, /setup-openviking\.mjs/);
+assert.match(skill, /reset-password\.mjs/);
 assert.match(skill, /用户侧只输入\s*一枚 Agent Plan Key/);
 assert.match(skill, /## 远程 Skill 入口/);
 const publicSkillCommand = skill.match(
@@ -70,12 +73,21 @@ assert.match(skill, /Claude Code/);
 assert.match(skill, /skill:install:codex/);
 assert.match(skill, /skill:install:claude/);
 assert.doesNotMatch(skill, /页面的“成员”入口/);
+assert.doesNotMatch(skill, /AUTH_REDIRECT_URL|自有 SMTP|密码恢复依赖/);
 assert.doesNotMatch(skill, /要求用户.*OpenViking.*(?:API )?Key/);
 const configure = read("skills/sales-intelligence-workbench/scripts/configure.mjs");
 assert.doesNotMatch(configure, /OpenViking 数据面 API Key/);
 assert.doesNotMatch(configure, /hiddenQuestion\(rl, output, "Supabase Service Role Key"/);
 assert.doesNotMatch(configure, /hiddenQuestion\(rl, output, "火山 (?:Access|Secret) Key/);
 assert.doesNotMatch(configure, /visibleQuestion\(rl, "Supabase Data API URL"/);
+assert.doesNotMatch(configure, /AUTH_REDIRECT_URL/);
+const login = read("skills/sales-intelligence-workbench/scripts/login.mjs");
+assert.match(login, /--username/);
+assert.match(login, /body: JSON\.stringify\(\{ username, password \}\)/);
+const resetPassword = read("skills/sales-intelligence-workbench/scripts/reset-password.mjs");
+assert.match(resetPassword, /promptSecret\("设置新密码："\)/);
+assert.match(resetPassword, /input: `\$\{password\}\\n`/);
+assert.doesNotMatch(resetPassword, /--password|readOption\(.+password/);
 assert.match(read("skills/sales-intelligence-workbench/scripts/setup-supabase.mjs"), /自动获取 Data API 端点和后端内部凭据/);
 assert.match(workflow, /专业数据集（DataPro）→ 豆包搜索（联网搜索）→ 证据整理与模型生成 → AI Native 应用开发底座（Supabase）/);
 assert.doesNotMatch(workflow, /DataPro → 豆包搜索 → OpenViking → 模型 → Supabase/);

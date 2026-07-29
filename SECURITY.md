@@ -2,7 +2,7 @@
 
 ## Supported scope
 
-The current `v0.9.1` Beta release supports one self-hosted workspace and one user. It includes Supabase Auth, browser and CLI user sessions, CSRF protection for cookie-authenticated mutations, workspace ownership records, and internal authorization roles. The public product does not expose member invitation or role-management features.
+The current `v0.9.2` Beta release supports one self-hosted workspace and one local administrator. It includes Supabase Auth, browser and CLI sessions, CSRF protection for cookie-authenticated mutations, and an internal account binding for workspace isolation. It does not expose public registration, email confirmation, password-recovery email, member, or role-management flows.
 
 This is not a managed multi-tenant SaaS release. The default listener remains `127.0.0.1`. Do not expose the backend port directly to the public Internet; place the application behind an HTTPS reverse proxy and complete the deployment checks below.
 
@@ -21,7 +21,7 @@ Rotate any credential that appeared in chat, screenshots, logs, commits, or issu
 
 - Keep Provider keys and the Supabase Service Role Key on the backend only.
 - Keep the default loopback bind unless HTTPS, Secure Cookie, exact Origin allowlists, request limits, and network access controls are configured.
-- Configure SMTP and allowed Auth Redirect URLs before enabling password recovery.
+- Reset a forgotten password only through the interactive local reset command; never pass a password in shell arguments or logs.
 - Use a dedicated Supabase Workspace and OpenViking namespace for each deployment.
 - Import only Feishu content the operator is authorized to process.
 - Store backups as private data and test restores on an isolated target.

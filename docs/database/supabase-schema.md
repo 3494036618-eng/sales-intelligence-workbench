@@ -14,7 +14,7 @@ supabase/migrations/
 
 | 数据域 | 表 |
 | --- | --- |
-| 租户与成员 | `app_workspaces`、`app_users`、`app_workspace_members` |
+| 身份与数据归属 | `app_workspaces`、`app_users`、`app_workspace_members`（底层表名沿用历史命名，仅用于单管理员鉴权与隔离） |
 | Provider 配置 | `provider_connections` |
 | 销售业务 | `sales_goals`、`sales_companies`、`sales_target_enterprises`、`sales_company_search_results`、`sales_progress_snapshots` |
 | 档案与引用 | `sales_dossier_records`、`sales_dossier_citations` |
@@ -24,11 +24,11 @@ supabase/migrations/
 | 同步与审计 | `sync_sources`、`sync_checkpoints`、`audit_events` |
 | 迁移历史 | `schema_migrations` |
 
-## 租户边界
+## 工作区边界
 
 - 每张业务表都有 `workspace_id`。
 - Repository 的每次读取、更新和删除都强制带 `workspace_id`。
-- 数据库启用并强制执行 RLS；普通认证用户只能访问所属工作区。
+- 数据库启用并强制执行 RLS；本机管理员只能访问所属工作区。
 - `service_role` 只允许后端使用，永远不能进入浏览器构建产物。
 - 文本主键虽然全局唯一，跨工作区写入仍会显式检查 ID 冲突，避免 service role 误覆盖其他租户。
 

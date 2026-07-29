@@ -79,7 +79,7 @@ export function createRouter(providerService, options = {}) {
       data: {
         status: runtimePolicy.ready ? "ok" : "degraded",
         service: "sales-intelligence-workbench-api",
-        version: "0.9.1",
+        version: "0.9.2",
         provider_mode: providerMode,
         runtime_ready: runtimePolicy.ready,
       },
@@ -114,14 +114,6 @@ export function createRouter(providerService, options = {}) {
     }), "public"),
     route("POST", /^\/api\/auth\/logout$/, [], async ({ req, res }) => ({
       data: await authService.logout(req, res),
-      meta: { provider_mode: "supabase_auth" },
-    }), "public"),
-    route("POST", /^\/api\/auth\/password\/recover$/, [], async ({ body }) => ({
-      data: await authService.requestPasswordRecovery(body),
-      meta: { provider_mode: "supabase_auth" },
-    }), "public"),
-    route("POST", /^\/api\/auth\/password\/update$/, [], async ({ body, req, res }) => ({
-      data: await authService.updatePassword(body, req, res),
       meta: { provider_mode: "supabase_auth" },
     }), "public"),
     route("GET", /^\/api\/providers\/status$/, [], async () => ({

@@ -20,10 +20,10 @@
 2. 在用户终端完成飞书 OAuth 登录。
 3. 用户本人对目标文档或会话有读取权限。
 4. 工作台正在运行，目标企业已经存在。
-5. 已在工作台页面创建管理员，并运行 `node {baseDir}/scripts/login.mjs` 建立 CLI 会话。
+5. 已在工作台页面设置本机管理员，并运行 `node {baseDir}/scripts/login.mjs` 建立 CLI 会话。
 6. `FEISHU_CLI_IMPORT_ENABLED=true`（兼容旧配置 `FEISHU_SYNC_ENABLED=true`）时 doctor 能检测到 CLI。
 
-工作台运行后，成员也可在“历史资料”模块点击“导入飞书资料”，选择“飞书会话”或
+工作台运行后，本机管理员也可在“历史资料”模块点击“导入飞书资料”，选择“飞书会话”或
 “云文档”。会话只填写联系人姓名或 `oc_` 开头的会话 ID，云文档只粘贴完整链接。网页只提交来源参数并轮询本机任务状态，不显示 CLI 命令、授权令牌、
 OpenViking URI 或 Supabase 内部字段。会议纪要按云文档展示。
 
@@ -49,7 +49,7 @@ node {baseDir}/scripts/import-feishu.mjs --company-id <id> --chat-id <oc_xxx>
 ## 权限边界
 
 - CLI 不能绕过用户权限；不可见内容必须报告无权限。
-- 导入 API 使用当前工作台用户的 Bearer 会话并执行角色校验，不使用 Supabase Service Role 冒充用户。
+- 导入 API 使用当前本机管理员的 Bearer 会话并执行身份校验，不使用 Supabase Service Role 冒充用户。
 - 访问令牌不放入命令行参数；仅保存到本机状态目录的 `cli-session.json`，权限为 `0600`，过期后自动刷新。
 - 不自动扩大时间范围或导入整个组织消息。
 - 不把会话原文写入日志或聊天回复。

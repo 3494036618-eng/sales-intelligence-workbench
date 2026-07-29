@@ -39,12 +39,6 @@ function authServiceStub() {
     async logout() {
       return { authenticated: false };
     },
-    async requestPasswordRecovery() {
-      return { accepted: true };
-    },
-    async updatePassword() {
-      return { updated: true };
-    },
     async recordAudit(auth, event) {
       auditEvents.push({ actor_user_id: auth?.principal?.id || null, ...structuredClone(event) });
       return true;
@@ -262,13 +256,18 @@ test("health stays public while sales and provider APIs enforce role boundaries"
   });
 });
 
-test("password recovery stays public while member administration is not exposed", async () => {
+test("email recovery and multi-user administration are not exposed", async () => {
   await withRouter(async (request) => {
     assert.equal((await request("/api/auth/password/recover", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: "member@example.com" }),
-    })).status, 200);
+      body: JSON.stringify({ email: "user@example.com" }),
+    })).status, 404);
+    assert.equal((await request("/api/auth/password/update", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: "a-secure-password" }),
+    })).status, 404);
     assert.equal((await request("/api/admin/members", {
       headers: { Authorization: "Bearer admin" },
     })).status, 404);
@@ -338,7 +337,7 @@ test("cookie mutations require CSRF and oversized JSON is rejected", async () =>
     const oversized = await request("/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: "x@example.com", password: "x".repeat(1500) }),
+      body: JSON.stringify({ username: "local-admin", password: "x".repeat(1500) }),
     });
     assert.equal(oversized.status, 413);
     assert.equal(oversized.json().error.code, "payload_too_large");

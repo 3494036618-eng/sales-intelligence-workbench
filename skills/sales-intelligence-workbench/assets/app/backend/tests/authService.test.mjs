@@ -63,6 +63,12 @@ function authFetchFixture() {
       if (parsed.pathname.endsWith("/admin/users") && options.method === "POST") {
         return new Response(JSON.stringify({ id: userId, email: "owner@example.com" }), { status: 200 });
       }
+      if (parsed.pathname.endsWith(`/admin/users/${userId}`) && options.method === "GET") {
+        return new Response(JSON.stringify({ id: userId, email: "owner@example.com" }), { status: 200 });
+      }
+      if (parsed.pathname.endsWith(`/admin/users/${userId}`) && options.method === "PUT") {
+        return new Response(JSON.stringify({ id: userId, email: "owner@example.com" }), { status: 200 });
+      }
       if (parsed.pathname.endsWith("/token") && parsed.searchParams.get("grant_type") === "password") {
         return new Response(JSON.stringify({
           access_token: "access-token",
@@ -103,30 +109,54 @@ function createService(provider, fetchFixture) {
   });
 }
 
-test("first-user bootstrap creates an owner membership and secure session cookies", async () => {
+test("first-run setup creates one confirmed local administrator without exposing email", async () => {
   const provider = dataProviderFixture();
   const authFetch = authFetchFixture();
   const service = createService(provider, authFetch);
   const response = responseRecorder();
 
   const result = await service.bootstrap({
-    email: "OWNER@example.com",
+    username: "测试用户",
     password: "a-secure-password",
-    display_name: "测试用户",
   }, response);
 
   assert.equal(result.authenticated, true);
-  assert.equal(result.user.role, "owner");
+  assert.equal(result.user.username, "测试用户");
+  assert.equal(Object.hasOwn(result.user, "email"), false);
+  assert.equal(Object.hasOwn(result.user, "role"), false);
   assert.deepEqual(provider.state.members, [{ workspace_id: workspaceId, user_id: userId, role: "owner" }]);
   assert.equal(provider.state.workspaceUpdates[0].values.created_by, userId);
+  const createBody = JSON.parse(authFetch.calls.find((call) => call.pathname.endsWith("/admin/users"))?.body || "{}");
+  assert.equal(createBody.email_confirm, true);
+  assert.match(createBody.email, /^owner-[a-f0-9]{24}@sales-workbench\.invalid$/);
+  assert.equal(createBody.user_metadata.username, "测试用户");
   assert.equal(response.headers["set-cookie"].length, 3);
   assert.match(response.headers["set-cookie"][0], /siw_access=.*HttpOnly.*SameSite=Strict/);
   assert.match(response.headers["set-cookie"][1], /siw_refresh=.*HttpOnly.*SameSite=Strict/);
   assert.doesNotMatch(response.headers["set-cookie"].join(" | "), /service-role-secret/);
 });
 
-test("password login resolves the workspace role and enforces least privilege", async () => {
+test("username login keeps authorization internal and supports the existing account binding", async () => {
   const provider = dataProviderFixture("viewer");
+  const authFetch = authFetchFixture();
+  const service = createService(provider, authFetch);
+  const result = await service.login({
+    username: "测试用户",
+    password: "a-secure-password",
+  }, responseRecorder());
+
+  assert.equal(result.user.username, "测试用户");
+  assert.equal(Object.hasOwn(result.user, "role"), false);
+  const session = await service.passwordSession("测试用户", "a-secure-password");
+  service.requireRole({ principal: session.principal }, "viewer");
+  assert.throws(
+    () => service.requireRole({ principal: session.principal }, "member"),
+    (error) => error.status === 403 && error.code === "insufficient_role",
+  );
+});
+
+test("legacy email credentials remain compatible without exposing email in the public session", async () => {
+  const provider = dataProviderFixture("owner");
   const authFetch = authFetchFixture();
   const service = createService(provider, authFetch);
   const result = await service.login({
@@ -134,11 +164,13 @@ test("password login resolves the workspace role and enforces least privilege", 
     password: "a-secure-password",
   }, responseRecorder());
 
-  assert.equal(result.user.role, "viewer");
-  service.requireRole({ principal: result.user }, "viewer");
-  assert.throws(
-    () => service.requireRole({ principal: result.user }, "member"),
-    (error) => error.status === 403 && error.code === "insufficient_role",
+  assert.equal(result.authenticated, true);
+  assert.equal(result.user.username, "测试用户");
+  assert.equal(Object.hasOwn(result.user, "email"), false);
+  assert.equal(Object.hasOwn(result.user, "role"), false);
+  assert.equal(
+    authFetch.calls.some((call) => call.pathname.endsWith(`/admin/users/${userId}`) && call.method === "GET"),
+    false,
   );
 });
 
@@ -163,17 +195,33 @@ test("CLI login and refresh return only user-scoped bearer sessions", async () =
   const service = createService(provider, authFetch);
 
   const loggedIn = await service.cliLogin({
-    email: "owner@example.com",
+    username: "测试用户",
     password: "a-secure-password",
   });
   assert.equal(loggedIn.token_type, "bearer");
   assert.equal(loggedIn.access_token, "access-token");
   assert.equal(loggedIn.refresh_token, "refresh-token");
-  assert.equal(loggedIn.user.role, "member");
+  assert.equal(loggedIn.user.username, "测试用户");
+  assert.equal(Object.hasOwn(loggedIn.user, "role"), false);
+  assert.equal(Object.hasOwn(loggedIn.user, "email"), false);
   assert.equal(Object.hasOwn(loggedIn, "service_role_key"), false);
 
   const refreshed = await service.cliRefresh({ refresh_token: loggedIn.refresh_token });
   assert.equal(refreshed.access_token, "refreshed-access-token");
   assert.equal(refreshed.refresh_token, "rotated-refresh-token");
   assert.equal(refreshed.expires_in, 7200);
+});
+
+test("local password reset updates the sole administrator through the server-side auth API", async () => {
+  const provider = dataProviderFixture("owner");
+  const authFetch = authFetchFixture();
+  const service = createService(provider, authFetch);
+
+  const result = await service.resetOwnerPassword("a-new-secure-password");
+
+  assert.deepEqual(result, { updated: true, username: "测试用户" });
+  const update = authFetch.calls.find(
+    (call) => call.pathname.endsWith(`/admin/users/${userId}`) && call.method === "PUT",
+  );
+  assert.deepEqual(JSON.parse(update.body), { password: "a-new-secure-password" });
 });

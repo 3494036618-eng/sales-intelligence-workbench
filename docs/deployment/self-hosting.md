@@ -1,6 +1,6 @@
 # 单工作区自托管部署
 
-本文说明 `0.9.1` Beta 的支持边界和推荐部署方式。当前版本仅支持单工作区、单人使用，以及本机或受控内网自托管；不提供公网生产 SaaS、多人协作或 SLA。公网开放前必须完成正式域名、HTTPS、邮件服务和真实链路验收。
+本文说明 `0.9.2` Beta 的支持边界和推荐部署方式。当前版本仅支持单工作区、单管理员，以及本机或受控内网自托管；不提供公网生产 SaaS、多人协作或 SLA。公网开放前必须完成正式域名、HTTPS 和真实链路验收。
 
 ## 1. 进程与网络边界
 
@@ -27,7 +27,6 @@ HOST="127.0.0.1"
 PORT="8787"
 HTTP_AUTH_ENABLED="true"
 AUTH_COOKIE_SECURE="true"
-AUTH_REDIRECT_URL="https://sales.example.com/"
 ALLOWED_ORIGINS="https://sales.example.com"
 TRUST_PROXY="true"
 ASYNC_JOBS_ENABLED="true"
@@ -37,7 +36,7 @@ PROVIDER_CIRCUIT_BREAKER_FAILURE_THRESHOLD="5"
 PROVIDER_CIRCUIT_BREAKER_COOLDOWN_SECONDS="60"
 ```
 
-`AUTH_REDIRECT_URL` 还必须原样加入 Supabase Auth 的 Redirect URLs。工作台会拒绝非 HTTPS 的代理回跳地址、非 HTTPS 来源以及与回跳域名不一致的来源配置。
+工作台会拒绝非 HTTPS 来源或缺少明确来源白名单的代理部署配置。
 
 ## 3. Nginx 示例
 
@@ -119,4 +118,4 @@ curl --fail --silent https://sales.example.com/api/health
 
 - 本项目当前不提供多租户 SaaS 托管边界。
 - 未提供内置 TLS、企业 SSO、MFA 或高可用 Worker。
-- 未完成正式 SMTP、容量压测和告警配置前，不应对外承诺生产 SLA。
+- 未完成容量压测和告警配置前，不应对外承诺生产 SLA。

@@ -37,8 +37,6 @@ Supabase 初始化需要用户在官方 CLI 完成一次火山账号 OAuth 登�
 - `SUPABASE_READ_ONLY=false`
 - `SUPABASE_API_URL`、`SUPABASE_SERVICE_ROLE_KEY`、`APP_WORKSPACE_ID`
 - `HTTP_AUTH_ENABLED=true`；本地回环 HTTP 使用 `AUTH_COOKIE_SECURE=false`，非回环部署必须使用 HTTPS 并设为 `true`
-- `AUTH_REDIRECT_URL` 指向用户实际打开工作台的 HTTPS 根地址，并在 Supabase Auth 的 Redirect URLs 中加入完全一致的地址；本地默认值是 `http://127.0.0.1:8787/`
-- Supabase Auth 必须配置可用的邮件发送服务。正式公网部署使用自有 SMTP，并完成发件域名、邀请邮件和密码恢复邮件验证
 - `ALLOWED_ORIGINS` 只列出实际部署来源，不使用 `*`
 - `PAID_WORKFLOW_MAX_CONCURRENCY` 和 `PAID_WORKFLOW_DAILY_LIMIT` 必须为正整数；默认分别为 `2` 和 `100`
 - `PAID_WORKFLOW_BUDGET_TIMEZONE` 默认 `Asia/Shanghai`；`PAID_WORKFLOW_STALE_AFTER_SECONDS` 默认 `1800`
@@ -51,7 +49,7 @@ Supabase 初始化需要用户在官方 CLI 完成一次火山账号 OAuth 登�
 
 OpenViking 保存飞书正文，并按官方“确认或创建会话 → 逐条添加消息 → 提交会话”流程保存资料问答记忆。提交频率和保留的近期消息数可分别用 `OPENVIKING_QA_AUTO_COMMIT_EVERY`、`OPENVIKING_QA_KEEP_RECENT_MESSAGES` 调整。自动取得的内部凭证只供后端读取，不会复制到前端、日志或用户引导。
 
-密码恢复由后端调用 Supabase Auth 接口发信。浏览器收到回跳链接后会立即清除地址栏中的令牌片段，并只在当前页面内存中使用该短期令牌设置密码。`SUPABASE_SERVICE_ROLE_KEY` 始终留在后端；任何恢复令牌或用户密码都不得写入日志、截图或前端持久化存储。
+首次使用只设置唯一的本机管理员用户名和密码，不需要邮箱或邮件服务。忘记密码时在安装工作台的本机运行 `reset-password.mjs`，由后端私密配置直接更新该账号。`SUPABASE_SERVICE_ROLE_KEY` 始终留在后端；任何用户密码都不得写入命令行参数、日志、截图或前端持久化存储。
 
 ## doctor 语义
 

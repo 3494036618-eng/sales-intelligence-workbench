@@ -1,6 +1,6 @@
 # 销售智能工作台 API 合约
 
-更新时间：2026-07-26
+更新时间：2026-07-29
 
 本文只记录当前销售智能工作台的公开 API。早期原型接口不属于公开合约，相关路由已删除。
 
@@ -67,8 +67,8 @@ X-CSRF-Token: <csrf_token>
 
 ### CLI 会话
 
-CLI 使用 `POST /api/auth/cli-login` 获取用户级 Bearer 会话。不要把 Supabase
-Service Role Key 当作用户令牌。推荐使用随 Skill 分发的登录脚本，将会话保存为
+CLI 使用 `POST /api/auth/cli-login` 获取本机管理员的 Bearer 会话。不要把 Supabase
+Service Role Key 当作登录令牌。推荐使用随 Skill 分发的登录脚本，将会话保存为
 仅当前用户可读的 `0600` 文件。
 
 ```http
@@ -77,18 +77,11 @@ Authorization: Bearer <user_access_token>
 
 Bearer 请求不依赖浏览器 Cookie，因此不要求 CSRF Header。
 
-### 角色
+### 访问边界
 
-| 角色 | 读取业务 | 修改业务 | 查看运维诊断 |
-| --- | --- | --- | --- |
-| `viewer` | 是 | 否 | 否 |
-| `member` | 是 | 是 | 否 |
-| `admin` | 是 | 是 | 是 |
-| `owner` | 是 | 是 | 是 |
-
-首个个人账号通过 bootstrap 创建，后端内部使用 `owner` 标记保护全部业务和付费接口。
-当前 Beta 按单工作区、单人使用，不提供新增成员、修改角色或移除成员的公开接口；
-其余角色仅为内部预留能力，不代表当前产品支持多人协作。
+当前 Beta 只有一个本机管理员。首次使用通过 bootstrap 设置用户名和密码，之后 bootstrap
+永久关闭；邮箱确认和邮件找回流程不会启用。数据库中的账号归属记录只用于鉴权与工作区
+数据隔离，不构成额外的用户账号能力。
 
 ## 3. 接口清单
 
@@ -98,28 +91,29 @@ Bearer 请求不依赖浏览器 Cookie，因此不要求 CSRF Header。
 | --- | --- | --- |
 | GET | `/api/health` | 健康状态与运行就绪度 |
 | GET | `/api/auth/status` | 登录状态、bootstrap 状态和 CSRF Token |
-| POST | `/api/auth/bootstrap` | 创建个人账号；完成后不再开放 |
-| POST | `/api/auth/login` | 浏览器邮箱密码登录 |
+| POST | `/api/auth/bootstrap` | 首次设置本机管理员用户名和密码；完成后不再开放 |
+| POST | `/api/auth/login` | 浏览器用户名密码登录 |
 | POST | `/api/auth/refresh` | 刷新浏览器会话 |
 | POST | `/api/auth/logout` | 退出浏览器会话 |
-| POST | `/api/auth/cli-login` | 创建 CLI 用户会话 |
+| POST | `/api/auth/cli-login` | 创建 CLI 管理员会话 |
 | POST | `/api/auth/cli-refresh` | 刷新 CLI 用户会话 |
-| POST | `/api/auth/password/recover` | 发起密码恢复 |
-| POST | `/api/auth/password/update` | 使用恢复令牌更新密码 |
+
+忘记密码时不调用公开 HTTP 接口，也不发送邮件。管理员必须在安装工作台的本机交互式运行
+`skills/sales-intelligence-workbench/scripts/reset-password.mjs`。
 
 ### 运维管理
 
-| Method | Path | 最低角色 | 用途 |
+| Method | Path | 身份 | 用途 |
 | --- | --- | --- | --- |
-| GET | `/api/admin/status` | `admin` | 脱敏的系统与持久化状态 |
-| GET | `/api/admin/usage-budget` | `admin` | 当前并发和当日付费工作流尝试次数 |
-| GET | `/api/admin/audit-events` | `admin` | 查询关键操作和敏感导出的脱敏审计记录 |
-| GET | `/api/admin/workspace-export` | `owner` | 导出排除运行时内部字段的私密业务数据包 |
-| GET | `/api/providers/status` | `admin` | 只读配置状态，不调用外部服务 |
-| GET | `/api/provider-runs` | `admin` | 按条件查询 Provider 运行记录 |
-| GET | `/api/provider-runs/:provider_run_id` | `admin` | 查询单次运行与步骤 |
+| GET | `/api/admin/status` | 本机管理员 | 脱敏的系统与持久化状态 |
+| GET | `/api/admin/usage-budget` | 本机管理员 | 当前并发和当日付费工作流尝试次数 |
+| GET | `/api/admin/audit-events` | 本机管理员 | 查询关键操作和敏感导出的脱敏审计记录 |
+| GET | `/api/admin/workspace-export` | 本机管理员 | 导出排除运行时内部字段的私密业务数据包 |
+| GET | `/api/providers/status` | 本机管理员 | 只读配置状态，不调用外部服务 |
+| GET | `/api/provider-runs` | 本机管理员 | 按条件查询 Provider 运行记录 |
+| GET | `/api/provider-runs/:provider_run_id` | 本机管理员 | 查询单次运行与步骤 |
 
-以下探针均要求 `admin`，并可能调用外部服务、产生额度或费用：
+以下探针均要求本机管理员登录，并可能调用外部服务、产生额度或费用：
 
 ```text
 POST /api/providers/web-search/probe
@@ -131,39 +125,39 @@ POST /api/providers/supabase/probe
 
 ### 销售业务
 
-| Method | Path | 最低角色 | 用途 |
+| Method | Path | 身份 | 用途 |
 | --- | --- | --- | --- |
-| GET | `/api/sales-goals` | `viewer` | 查询销售目标 |
-| POST | `/api/sales-goals` | `member` | 创建销售目标 |
-| GET | `/api/sales-goals/:goal_id/target-enterprises` | `viewer` | 查询目标企业池 |
-| POST | `/api/sales-goals/:goal_id/company-search` | `member` | 通过专业数据和公开来源检索企业 |
-| POST | `/api/sales-goals/:goal_id/target-enterprises` | `member` | 将已核验候选企业加入目标池 |
-| GET | `/api/target-enterprises/:enterprise_id` | `viewer` | 企业、档案、资料和问答聚合详情 |
-| GET | `/api/target-enterprises/:enterprise_id/progress` | `viewer` | 查询销售进展 |
-| GET | `/api/target-enterprises/:enterprise_id/dossiers` | `viewer` | 查询企业档案版本 |
-| POST | `/api/target-enterprises/:enterprise_id/dossiers` | `member` | 创建异步档案生成任务 |
-| GET | `/api/dossiers/:dossier_id` | `viewer` | 查询档案正文和公开引用 |
-| GET | `/api/target-enterprises/:enterprise_id/materials` | `viewer` | 查询已导入资料 |
-| GET | `/api/target-enterprises/:enterprise_id/materials/sources` | `viewer` | 查询资料同步源 |
-| GET | `/api/target-enterprises/:enterprise_id/materials/sync-state` | `viewer` | 查询同步游标与索引状态 |
-| POST | `/api/target-enterprises/:enterprise_id/materials/import` | `member` | 导入一份获授权资料 |
-| GET | `/api/feishu-import/status` | `viewer` | 查询本机飞书 CLI 导入能力状态 |
-| POST | `/api/target-enterprises/:enterprise_id/materials/feishu-import` | `member` | 创建受控的飞书会话或云文档导入任务 |
-| GET | `/api/target-enterprises/:enterprise_id/materials/feishu-import/:task_id` | `viewer` | 查询当前后端进程中的导入任务进度 |
-| POST | `/api/target-enterprises/:enterprise_id/materials/source-action` | `member` | 暂停、恢复或删除同步源 |
-| POST | `/api/target-enterprises/:enterprise_id/materials/sync-openviking` | `member` | 创建异步 OpenViking 同步任务 |
-| GET | `/api/target-enterprises/:enterprise_id/qa` | `viewer` | 查询企业问答历史 |
-| POST | `/api/target-enterprises/:enterprise_id/qa` | `member` | 基于已保存证据问答 |
-| POST | `/api/target-enterprises/:enterprise_id/qa/commit-memory` | `member` | 将当前问答会话提交到长期记忆 |
+| GET | `/api/sales-goals` | 本机管理员 | 查询销售目标 |
+| POST | `/api/sales-goals` | 本机管理员 | 创建销售目标 |
+| GET | `/api/sales-goals/:goal_id/target-enterprises` | 本机管理员 | 查询目标企业池 |
+| POST | `/api/sales-goals/:goal_id/company-search` | 本机管理员 | 通过专业数据和公开来源检索企业 |
+| POST | `/api/sales-goals/:goal_id/target-enterprises` | 本机管理员 | 将已核验候选企业加入目标池 |
+| GET | `/api/target-enterprises/:enterprise_id` | 本机管理员 | 企业、档案、资料和问答聚合详情 |
+| GET | `/api/target-enterprises/:enterprise_id/progress` | 本机管理员 | 查询销售进展 |
+| GET | `/api/target-enterprises/:enterprise_id/dossiers` | 本机管理员 | 查询企业档案版本 |
+| POST | `/api/target-enterprises/:enterprise_id/dossiers` | 本机管理员 | 创建异步档案生成任务 |
+| GET | `/api/dossiers/:dossier_id` | 本机管理员 | 查询档案正文和公开引用 |
+| GET | `/api/target-enterprises/:enterprise_id/materials` | 本机管理员 | 查询已导入资料 |
+| GET | `/api/target-enterprises/:enterprise_id/materials/sources` | 本机管理员 | 查询资料同步源 |
+| GET | `/api/target-enterprises/:enterprise_id/materials/sync-state` | 本机管理员 | 查询同步游标与索引状态 |
+| POST | `/api/target-enterprises/:enterprise_id/materials/import` | 本机管理员 | 导入一份获授权资料 |
+| GET | `/api/feishu-import/status` | 本机管理员 | 查询本机飞书 CLI 导入能力状态 |
+| POST | `/api/target-enterprises/:enterprise_id/materials/feishu-import` | 本机管理员 | 创建受控的飞书会话或云文档导入任务 |
+| GET | `/api/target-enterprises/:enterprise_id/materials/feishu-import/:task_id` | 本机管理员 | 查询当前后端进程中的导入任务进度 |
+| POST | `/api/target-enterprises/:enterprise_id/materials/source-action` | 本机管理员 | 暂停、恢复或删除同步源 |
+| POST | `/api/target-enterprises/:enterprise_id/materials/sync-openviking` | 本机管理员 | 创建异步 OpenViking 同步任务 |
+| GET | `/api/target-enterprises/:enterprise_id/qa` | 本机管理员 | 查询企业问答历史 |
+| POST | `/api/target-enterprises/:enterprise_id/qa` | 本机管理员 | 基于已保存证据问答 |
+| POST | `/api/target-enterprises/:enterprise_id/qa/commit-memory` | 本机管理员 | 将当前问答会话提交到长期记忆 |
 
 ### 后台任务
 
-| Method | Path | 最低角色 | 用途 |
+| Method | Path | 身份 | 用途 |
 | --- | --- | --- | --- |
-| GET | `/api/jobs` | `viewer` | 按 `job_type`、`status`、`entity_id` 查询任务 |
-| GET | `/api/jobs/:job_id` | `viewer` | 查询公开任务状态 |
-| POST | `/api/jobs/:job_id/cancel` | `member` | 请求安全取消 |
-| POST | `/api/jobs/:job_id/retry` | `member` | 显式重试允许重试的任务 |
+| GET | `/api/jobs` | 本机管理员 | 按 `job_type`、`status`、`entity_id` 查询任务 |
+| GET | `/api/jobs/:job_id` | 本机管理员 | 查询公开任务状态 |
+| POST | `/api/jobs/:job_id/cancel` | 本机管理员 | 请求安全取消 |
+| POST | `/api/jobs/:job_id/retry` | 本机管理员 | 显式重试允许重试的任务 |
 
 ## 4. 主要请求体
 
@@ -302,7 +296,7 @@ Open ID。该任务调用本机已授权的 `lark-cli`，不会接收或返回�
 | --- | --- | --- |
 | 400 | `bad_request` | JSON 或字段不合法 |
 | 401 | `authentication_required` | 未登录或 CLI 会话过期 |
-| 403 | `insufficient_role` / `csrf_failed` | 角色不足或 CSRF 校验失败 |
+| 403 | `insufficient_role` / `csrf_failed` | 管理员身份状态异常或 CSRF 校验失败 |
 | 404 | `not_found` / `*_not_found` | 路由或当前工作区对象不存在 |
 | 409 | `already_exists` | 状态冲突 |
 | 422 | `job_type_unsupported` | 不支持的任务或动作 |
@@ -314,7 +308,7 @@ Open ID。该任务调用本机已授权的 `lark-cli`，不会接收或返回�
 
 ## 8. 数据导出边界
 
-`GET /api/admin/workspace-export` 只允许 `owner` 调用，并通过 `Cache-Control: no-store`
+`GET /api/admin/workspace-export` 只允许本机管理员调用，并通过 `Cache-Control: no-store`
 返回当前工作区的目标、企业、公开档案、资料正文、资料消息项、同步游标和问答。
 响应不包含身份令牌、Provider 原文、完整提示词、OpenViking 内部 URI、Job、Worker、
 租约或付费预约。该数据包仍包含客户沟通等私密业务内容，应使用 Skill 的
@@ -322,7 +316,7 @@ Open ID。该任务调用本机已授权的 `lark-cli`，不会接收或返回�
 
 ## 9. 审计边界
 
-`GET /api/admin/audit-events` 只允许 `admin` 或 `owner` 调用，支持按 `action`、
+`GET /api/admin/audit-events` 只允许本机管理员调用，支持按 `action`、
 `entity_type`、`entity_id` 精确筛选和 `limit` 限制。关键业务写操作、Provider 探测
 和工作区导出会记录操作者、动作、业务实体、请求编号与结果状态；审计事件不记录请求
 正文、密码、Token、API Key、Provider 原文或 OpenViking 内部引用。

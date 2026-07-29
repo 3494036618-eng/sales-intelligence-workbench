@@ -2,7 +2,7 @@
 
 销售智能工作台把企业专业数据、公开信息、飞书资料和长期记忆组织成可追溯的企业档案与资料问答。项目包含完整前后端、AI Native 应用开发底座（Supabase）数据层、Agent 记忆（OpenViking）链路，以及可在 Codex 和 Claude Code 中安装并运维应用的同一份 Skill。
 
-> 当前为 `0.9.1` Beta，仅支持单工作区、单人使用，以及本机或受控内网自托管。已支持 Supabase Auth、工作区数据隔离、安全请求边界、工作区级付费任务保护、持久化异步任务队列和独立 Worker。首版不提供公网生产 SaaS、多人协作或 SLA；不要把 Node.js 服务端口直接暴露到公网。
+> 当前为 `0.9.2` Beta，仅支持单工作区、单管理员，以及本机或受控内网自托管。已支持 Supabase Auth、工作区数据隔离、安全请求边界、工作区级付费任务保护、持久化异步任务队列和独立 Worker。首版不提供公网生产 SaaS、多人协作或 SLA；不要把 Node.js 服务端口直接暴露到公网。
 
 ## 核心能力
 
@@ -12,7 +12,7 @@
 - 将飞书资料正文和资料问答会话按 Workspace、企业隔离写入 Agent 记忆（OpenViking），并在问答前真实检索和恢复。
 - 使用 AI Native 应用开发底座（Supabase）保存企业、档案版本、引用、任务、工作区归属、Provider 运行记录，以及资料与会话的同步元数据。
 - 后端记录任务状态、失败原因、模型 Token 和 Provider 调用证据，供诊断接口与日志审计；正式业务前端不展示后台配置和运维信息。
-- 通过 Supabase Auth 保护业务与付费调用；当前 Beta 供单个用户使用，不提供成员邀请与角色管理。
+- 通过 Supabase Auth 保护业务与付费调用；首次使用设置一个本机管理员用户名和密码，不需要邮箱、邮件确认或用户注册。
 - 企业搜索、档案、问答、资料导入、OpenViking 同步/提交和资源删除统一经过工作区级并发与每日次数保护。
 - 连续可重试的 Provider 故障达到阈值后会临时熔断；冷却结束只放行一次恢复探测，避免持续超时拖垮工作台。
 - 档案生成和 OpenViking 批量同步通过 Supabase 持久化队列交给独立 Worker；页面可恢复任务进度。运行中取消采用“请求取消—安全检查点确认”机制，不会在 Provider 调用尚未结束时提前释放付费预约或允许并行重试。
@@ -51,7 +51,7 @@ Supabase 是结构化业务事实库；OpenViking 是飞书资料正文、资料
 
 当前独立发行仓库的版本化初始化入口为：
 
-> 帮我初始化销售助手：`https://github.com/3494036618-eng/sales-intelligence-workbench/blob/v0.9.1/skills/sales-intelligence-workbench/SKILL.md`
+> 帮我初始化销售助手：`https://github.com/3494036618-eng/sales-intelligence-workbench/blob/v0.9.2/skills/sales-intelligence-workbench/SKILL.md`
 
 该 URL 直接指向唯一的正式 Skill。即使用户本机没有仓库、依赖和配置文件，当前 Agent 也会
 先解释下载与本机写入影响，再从 URL 指定的版本取得完整仓库，执行离线校验，并把同一份
@@ -63,7 +63,7 @@ Skill 安装到当前客户端后立即衔接下面的 Cookbook 搭建流程。�
 ```bash
 npm run skill:command -- \
   --repository https://github.com/3494036618-eng/sales-intelligence-workbench \
-  --ref v0.9.1
+  --ref v0.9.2
 ```
 
 这里的“从 0 搭建”不等于绕过第三方服务授权：用户仍需拥有 Agent Plan，并在控制台开启
@@ -228,16 +228,22 @@ node skills/sales-intelligence-workbench/scripts/status.mjs
 
 `start.mjs` 会同时启动同源 API 和独立 Worker；`status.mjs` 分别报告两个进程。缺少队列迁移或 Worker 配置时会失败关闭，不会退回同步假成功。
 
-首次打开页面时，需要在浏览器中创建个人登录账号。完成后，匿名请求无法读取业务数据，付费 Provider 和运维接口仅对该登录账号开放。
+首次打开页面时设置唯一的本机管理员用户名和密码，无需填写邮箱或确认邮件。完成后，匿名请求无法读取业务数据，付费 Provider 和运维接口仅对该管理员开放；当前版本只允许这一套管理员账号。
 
-密码恢复需要在 Supabase Auth 配置可用邮件服务，并把 `AUTH_REDIRECT_URL` 加入允许的 Redirect URLs。正式公网部署应配置自有 SMTP；重置链接回跳后，浏览器只在内存中使用短期令牌完成密码设置，并立即清除地址栏中的令牌片段。
+忘记密码时，在安装该工作台的本机终端运行：
+
+```bash
+node skills/sales-intelligence-workbench/scripts/reset-password.mjs
+```
+
+脚本会隐藏输入并要求确认新密码，通过后端私密配置直接更新唯一管理员账号；密码不会进入命令行参数、日志或仓库。
 
 ## 导入飞书资料
 
 项目规定由 Codex CLI 调度飞书 CLI，使用当前用户授权读取，不依赖群机器人：
 
 ```bash
-node skills/sales-intelligence-workbench/scripts/login.mjs --email <your-email>
+node skills/sales-intelligence-workbench/scripts/login.mjs --username <工作台用户名>
 ```
 
 上述命令会在终端隐藏输入密码，并把用户级短期会话保存为权限 `0600` 的本机文件。随后执行：
@@ -299,7 +305,7 @@ AFP/Token 并保留业务记录。飞书增量导入、运行中重启、版本�
 
 ## 已知限制
 
-- 当前是单工作区、单人自托管架构；不提供成员邀请与角色管理，也尚未支持企业 SSO、MFA 和多工作区管理。
+- 当前是单工作区、单管理员自托管架构；没有公开注册、成员或角色系统，也尚未支持企业 SSO、MFA 和多工作区管理。
 - 本机默认使用 HTTP；公网部署需自行配置 HTTPS 反向代理，并启用 Secure Cookie。
 - 已有 IP/用户级限流、请求体上限、Workspace 付费任务保护、Provider 熔断和独立异步 Worker；目标数据库必须应用到 `202607280002`。当前仍没有精确 AFP/金额预算。
 - 当前持久化异步队列覆盖档案生成和 OpenViking 批量同步；前端飞书导入使用后端进程内受控任务，服务重启后任务进度不会恢复，但已成功写入的 OpenViking 正文和 Supabase 同步元数据不会丢失。首个稳定版还需把导入任务迁入持久化队列，并完成高可用 Worker 和容量压测。

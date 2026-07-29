@@ -5,14 +5,6 @@
     ? `${window.location.origin}/api`
     : "http://127.0.0.1:8787/api";
   const API_BASE = (window.SALES_WORKBENCH_API_BASE || defaultApiBase).replace(/\/$/, "");
-  const authRedirectParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
-  const authRedirectType = String(authRedirectParams.get("type") || "").toLowerCase();
-  let recoveryAccessToken = authRedirectType === "recovery"
-    ? String(authRedirectParams.get("access_token") || "")
-    : "";
-  if (recoveryAccessToken) {
-    window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
-  }
   const TARGET_STATUS_FILTERS = ["全部", "新商机", "初步接触", "需求确认", "商务推进", "成交归档"];
   const MATERIAL_FILTERS = ["全部", "档案", "飞书会话", "云文档"];
   const DOSSIER_SECTION_TITLES = [
@@ -57,8 +49,6 @@
     authBusy: "",
     authError: "",
     authNotice: "",
-    authView: recoveryAccessToken ? "update" : "login",
-    authPrefillEmail: "",
     feishuImportOpen: false,
     feishuImportAvailable: null,
     feishuImportKind: "conversation",
@@ -673,75 +663,28 @@
 
   function renderAuthScreen() {
     const bootstrap = state.auth.bootstrapRequired;
-    const view = bootstrap ? "bootstrap" : state.authView;
-    let content = "";
-    if (view === "recover") {
-      content = `
-        <div class="auth-heading">
-          <h1 id="authTitle">找回密码</h1>
-          <p>输入工作区邮箱，我们会发送密码重置链接。</p>
-        </div>
-        <form id="passwordRecoveryForm" class="auth-form">
-          <label>
-            <span>邮箱</span>
-            <input name="email" type="email" autocomplete="email" required placeholder="name@example.com" value="${escapeHtml(state.authPrefillEmail)}" />
-          </label>
-          ${state.authError ? `<p class="auth-error" role="alert">${escapeHtml(state.authError)}</p>` : ""}
-          ${state.authNotice ? `<p class="auth-notice" role="status">${escapeHtml(state.authNotice)}</p>` : ""}
-          <button class="auth-submit" type="submit" ${state.authBusy ? "disabled" : ""}>${state.authBusy ? "正在发送..." : "发送重置邮件"}</button>
-          <button class="auth-link-button" id="backToLogin" type="button">返回登录</button>
-        </form>
-      `;
-    } else if (view === "update") {
-      content = `
-        <div class="auth-heading">
-          <h1 id="authTitle">设置新密码</h1>
-          <p>请输入新的工作区登录密码。</p>
-        </div>
-        <form id="passwordUpdateForm" class="auth-form">
-          <label>
-            <span>新密码</span>
-            <input name="password" type="password" autocomplete="new-password" minlength="10" maxlength="256" required placeholder="至少 10 个字符" />
-          </label>
-          <label>
-            <span>确认新密码</span>
-            <input name="password_confirm" type="password" autocomplete="new-password" minlength="10" maxlength="256" required placeholder="再次输入新密码" />
-          </label>
-          ${state.authError ? `<p class="auth-error" role="alert">${escapeHtml(state.authError)}</p>` : ""}
-          <button class="auth-submit" type="submit" ${state.authBusy ? "disabled" : ""}>${state.authBusy ? "正在保存..." : "保存新密码"}</button>
-          <button class="auth-link-button" id="cancelPasswordUpdate" type="button">返回登录</button>
-        </form>
-      `;
-    } else {
-      content = `
-        <div class="auth-heading">
-          <h1 id="authTitle">${bootstrap ? "创建个人账号" : "登录工作台"}</h1>
-          <p>${bootstrap ? "首次使用需要创建个人登录账号。" : "使用个人账号继续访问销售资料。"}</p>
-        </div>
-        <form id="authForm" class="auth-form">
-          ${bootstrap ? `
-            <label>
-              <span>姓名</span>
-              <input name="display_name" autocomplete="name" maxlength="80" required placeholder="请输入姓名" />
-            </label>
-          ` : ""}
-          <label>
-            <span>邮箱</span>
-            <input name="email" type="email" autocomplete="email" required placeholder="name@example.com" value="${escapeHtml(state.authPrefillEmail)}" />
-          </label>
-          <label>
-            <span>密码</span>
-            <input name="password" type="password" autocomplete="${bootstrap ? "new-password" : "current-password"}" minlength="10" maxlength="256" required placeholder="至少 10 个字符" />
-          </label>
-          ${state.authError ? `<p class="auth-error" role="alert">${escapeHtml(state.authError)}</p>` : ""}
-          ${state.authNotice ? `<p class="auth-notice" role="status">${escapeHtml(state.authNotice)}</p>` : ""}
-          <button class="auth-submit" type="submit" ${state.authBusy ? "disabled" : ""}>
-            ${state.authBusy ? "请稍候..." : bootstrap ? "创建并进入工作台" : "登录"}
-          </button>
-          ${!bootstrap ? `<button class="auth-link-button" id="showPasswordRecovery" type="button">忘记密码</button>` : ""}
-        </form>
-      `;
-    }
+    const content = `
+      <div class="auth-heading">
+        <h1 id="authTitle">${bootstrap ? "设置本机管理员" : "登录工作台"}</h1>
+        <p>${bootstrap ? "首次使用只需设置一个用户名和密码。" : "使用本机管理员账号继续。"}</p>
+      </div>
+      <form id="authForm" class="auth-form">
+        <label>
+          <span>用户名</span>
+          <input name="username" autocomplete="username" minlength="2" maxlength="40" required placeholder="${bootstrap ? "设置用户名" : "输入用户名"}" />
+        </label>
+        <label>
+          <span>密码</span>
+          <input name="password" type="password" autocomplete="${bootstrap ? "new-password" : "current-password"}" minlength="10" maxlength="256" required placeholder="至少 10 个字符" />
+        </label>
+        ${state.authError ? `<p class="auth-error" role="alert">${escapeHtml(state.authError)}</p>` : ""}
+        ${state.authNotice ? `<p class="auth-notice" role="status">${escapeHtml(state.authNotice)}</p>` : ""}
+        <button class="auth-submit" type="submit" ${state.authBusy ? "disabled" : ""}>
+          ${state.authBusy ? "请稍候..." : bootstrap ? "设置并进入工作台" : "登录"}
+        </button>
+        ${!bootstrap ? `<p class="auth-help">忘记密码时，在本机终端运行 <code>reset-password.mjs</code> 重设。</p>` : ""}
+      </form>
+    `;
     return `
       <div class="auth-shell">
         <header class="auth-brand">
@@ -765,14 +708,14 @@
     const draft = state.feishuImportDraft;
     const conversation = state.feishuImportKind === "conversation";
     return `
-      <div class="member-modal-backdrop" id="feishuImportBackdrop">
-        <section class="member-modal feishu-import-modal" role="dialog" aria-modal="true" aria-labelledby="feishuImportTitle">
-          <header class="member-modal-header">
+      <div class="dialog-backdrop" id="feishuImportBackdrop">
+        <section class="dialog-modal feishu-import-modal" role="dialog" aria-modal="true" aria-labelledby="feishuImportTitle">
+          <header class="dialog-modal-header">
             <div>
               <h2 id="feishuImportTitle">导入飞书资料</h2>
               <p>${escapeHtml(item.name)}</p>
             </div>
-            <button class="member-modal-close" id="closeFeishuImport" type="button" aria-label="关闭" title="关闭">×</button>
+            <button class="dialog-modal-close" id="closeFeishuImport" type="button" aria-label="关闭" title="关闭">×</button>
           </header>
           <form class="feishu-import-form" id="feishuImportForm">
             <div class="feishu-import-kind" role="group" aria-label="资料类型">
@@ -1338,88 +1281,14 @@
   }
 
   function bindAuthEvents() {
-    const showAuthView = (view) => {
-      state.authView = view;
-      state.authBusy = "";
-      state.authError = "";
-      state.authNotice = "";
-      render();
-    };
-    $("#showPasswordRecovery")?.addEventListener("click", () => showAuthView("recover"));
-    $("#backToLogin")?.addEventListener("click", () => showAuthView("login"));
-    $("#cancelPasswordUpdate")?.addEventListener("click", () => {
-      recoveryAccessToken = "";
-      showAuthView("login");
-    });
-    $("#passwordRecoveryForm")?.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      if (state.authBusy) return;
-      const form = new FormData(event.currentTarget);
-      state.authPrefillEmail = String(form.get("email") || "").trim();
-      state.authBusy = "recover";
-      state.authError = "";
-      state.authNotice = "";
-      render();
-      try {
-        await api("/auth/password/recover", {
-          method: "POST",
-          body: { email: state.authPrefillEmail },
-          skipAuthRedirect: true,
-        });
-        state.authNotice = "如果该邮箱属于工作区成员，重置邮件已经发送。";
-      } catch (error) {
-        state.authError = apiErrorMessage(error, "暂时无法发送重置邮件，请稍后重试。");
-      } finally {
-        state.authBusy = "";
-        render();
-      }
-    });
-    $("#passwordUpdateForm")?.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      if (state.authBusy) return;
-      const form = new FormData(event.currentTarget);
-      const password = String(form.get("password") || "");
-      const confirmation = String(form.get("password_confirm") || "");
-      if (password !== confirmation) {
-        state.authError = "两次输入的密码不一致。";
-        render();
-        return;
-      }
-      if (!recoveryAccessToken) {
-        state.authError = "密码重置链接无效或已经过期。";
-        render();
-        return;
-      }
-      state.authBusy = "update";
-      state.authError = "";
-      render();
-      try {
-        const result = await api("/auth/password/update", {
-          method: "POST",
-          body: { password },
-          headers: { Authorization: `Bearer ${recoveryAccessToken}` },
-          skipAuthRedirect: true,
-        });
-        recoveryAccessToken = "";
-        state.authPrefillEmail = result.email || "";
-        state.authView = "login";
-        state.authNotice = "密码已设置，请使用新密码登录。";
-      } catch (error) {
-        state.authError = apiErrorMessage(error, "密码设置失败，请重新申请链接。");
-      } finally {
-        state.authBusy = "";
-        render();
-      }
-    });
     $("#authForm")?.addEventListener("submit", async (event) => {
       event.preventDefault();
       if (state.authBusy) return;
       const form = new FormData(event.currentTarget);
       const bootstrap = state.auth.bootstrapRequired;
       const body = {
-        email: String(form.get("email") || "").trim(),
+        username: String(form.get("username") || "").trim(),
         password: String(form.get("password") || ""),
-        ...(bootstrap ? { display_name: String(form.get("display_name") || "").trim() } : {}),
       };
       state.authBusy = bootstrap ? "bootstrap" : "login";
       state.authError = "";
@@ -1440,7 +1309,7 @@
         await boot();
       } catch (error) {
         state.authBusy = "";
-        state.authError = apiErrorMessage(error, bootstrap ? "管理员创建失败，请重试。" : "登录失败，请检查邮箱和密码。");
+        state.authError = apiErrorMessage(error, bootstrap ? "管理员设置失败，请重试。" : "登录失败，请检查用户名和密码。");
         render();
       }
     });
@@ -1590,7 +1459,6 @@
       state.authBusy = "";
       state.authError = "";
       state.authNotice = "";
-      state.authView = "login";
       render();
     });
     $("#toggleNewGoal")?.addEventListener("click", () => {
@@ -1905,19 +1773,6 @@
 
   async function boot() {
     const generation = ++bootGeneration;
-    if (recoveryAccessToken && state.authView === "update") {
-      state.auth = {
-        checked: true,
-        enabled: true,
-        authenticated: false,
-        bootstrapRequired: false,
-        user: null,
-      };
-      state.bootLoading = false;
-      state.bootError = "";
-      render();
-      return;
-    }
     state.bootLoading = true;
     state.bootError = "";
     render();

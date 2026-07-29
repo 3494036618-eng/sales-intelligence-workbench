@@ -68,7 +68,6 @@ export const RUNTIME_KEYS = Object.freeze([
   "HTTP_AUTH_ENABLED",
   "AUTH_BOOTSTRAP_ENABLED",
   "AUTH_COOKIE_SECURE",
-  "AUTH_REDIRECT_URL",
   "AUTH_PROVIDER_TIMEOUT_MS",
   "AUTH_SESSION_CACHE_TTL_MS",
   "AUTH_REFRESH_COOKIE_MAX_AGE",
@@ -146,7 +145,6 @@ const RUNTIME_DEFAULTS = Object.freeze({
   HTTP_AUTH_ENABLED: "true",
   AUTH_BOOTSTRAP_ENABLED: "true",
   AUTH_COOKIE_SECURE: "false",
-  AUTH_REDIRECT_URL: "http://127.0.0.1:8787/",
   AUTH_PROVIDER_TIMEOUT_MS: "12000",
   AUTH_SESSION_CACHE_TTL_MS: "15000",
   AUTH_REFRESH_COOKIE_MAX_AGE: "2592000",
@@ -425,6 +423,7 @@ export function run(command, args, options = {}) {
     env: options.env || process.env,
     stdio: options.stdio || "inherit",
     encoding: options.encoding,
+    input: options.input,
   });
   if (result.error) throw result.error;
   if (result.status !== 0 && !options.allowFailure) {

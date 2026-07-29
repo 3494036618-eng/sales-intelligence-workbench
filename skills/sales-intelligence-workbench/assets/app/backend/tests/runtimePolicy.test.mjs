@@ -91,38 +91,24 @@ test("the persistent worker queue and circuit breaker are mandatory", () => {
   assert.match(blockers, /PROVIDER_CIRCUIT_BREAKER_COOLDOWN_SECONDS/);
 });
 
-test("proxied deployments require secure cookies and matching HTTPS origins", () => {
+test("proxied deployments require secure cookies and explicit HTTPS origins", () => {
   const unsafe = createRuntimePolicy({
     env: envReader({
       ...readyConfiguration,
       TRUST_PROXY: "true",
       AUTH_COOKIE_SECURE: "false",
-      AUTH_REDIRECT_URL: "http://sales.example.test/",
       ALLOWED_ORIGINS: "http://sales.example.test",
     }),
   });
   const blockers = unsafe.blockers.join(" | ");
   assert.match(blockers, /AUTH_COOKIE_SECURE=true/);
-  assert.match(blockers, /HTTPS AUTH_REDIRECT_URL/);
   assert.match(blockers, /HTTPS ALLOWED_ORIGINS/);
-
-  const mismatched = createRuntimePolicy({
-    env: envReader({
-      ...readyConfiguration,
-      TRUST_PROXY: "true",
-      AUTH_COOKIE_SECURE: "true",
-      AUTH_REDIRECT_URL: "https://sales.example.test/",
-      ALLOWED_ORIGINS: "https://other.example.test",
-    }),
-  });
-  assert.match(mismatched.blockers.join(" | "), /must include the AUTH_REDIRECT_URL origin/);
 
   const safe = createRuntimePolicy({
     env: envReader({
       ...readyConfiguration,
       TRUST_PROXY: "true",
       AUTH_COOKIE_SECURE: "true",
-      AUTH_REDIRECT_URL: "https://sales.example.test/",
       ALLOWED_ORIGINS: "https://sales.example.test",
     }),
   });

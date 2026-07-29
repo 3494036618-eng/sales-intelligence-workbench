@@ -127,6 +127,8 @@ test("formal frontend has retryable connection and request-trace errors", () => 
 test("formal frontend authenticates before loading business data and protects mutations with CSRF", () => {
   assert.match(appSource, /api\("\/auth\/status", \{ skipAuthRedirect: true \}\)/);
   assert.match(appSource, /bootstrap \? "\/auth\/bootstrap" : "\/auth\/login"/);
+  assert.match(appSource, /name="username" autocomplete="username"/);
+  assert.doesNotMatch(appSource, /name="email"|type="email"/);
   assert.match(appSource, /credentials: "same-origin"/);
   assert.match(appSource, /cookieValue\("siw_csrf"\)/);
   assert.match(appSource, /headers\["X-CSRF-Token"\] = csrfToken/);
@@ -135,18 +137,18 @@ test("formal frontend authenticates before loading business data and protects mu
   assert.doesNotMatch(appSource, /AGENT_PLAN_API_KEY|SUPABASE_API_URL|service-role-secret|siw_access/);
 });
 
-test("formal frontend omits member administration and keeps password recovery without exposing auth secrets", () => {
+test("formal frontend exposes one local administrator and no email or member flows", () => {
   assert.doesNotMatch(appSource, /openMemberAdmin|memberInviteForm|\/admin\/members/);
-  assert.match(appSource, /id="passwordRecoveryForm"/);
-  assert.match(appSource, /"\/auth\/password\/recover"/);
-  assert.match(appSource, /"\/auth\/password\/update"/);
-  assert.match(appSource, /window\.history\.replaceState/);
+  assert.match(appSource, /设置本机管理员/);
+  assert.match(appSource, /reset-password\.mjs/);
+  assert.doesNotMatch(appSource, /passwordRecoveryForm|\/auth\/password\/recover|\/auth\/password\/update/);
+  assert.doesNotMatch(appSource, /工作区成员|成员管理|成员邀请|找回密码|重置邮件/);
   assert.doesNotMatch(appSource, /SUPABASE_SERVICE_ROLE_KEY|service_role/);
 });
 
 test("formal frontend assets carry the current cache key and responsive runtime styles", () => {
   assert.match(htmlSource, /<title>销售智能工作台<\/title>/);
-  assert.match(htmlSource, /20260727-inline-citations/);
+  assert.match(htmlSource, /20260729-single-admin/);
   assert.match(htmlSource, /text-format\.js/);
   assert.match(styleSource, /\.version-tabs/);
   assert.match(styleSource, /\.citation-item/);
@@ -161,7 +163,8 @@ test("formal frontend assets carry the current cache key and responsive runtime 
   assert.match(styleSource, /\.library-dossier-link/);
   assert.match(styleSource, /\.connection-retry/);
   assert.match(styleSource, /\.auth-panel/);
-  assert.match(styleSource, /\.member-modal/);
+  assert.match(styleSource, /\.dialog-modal/);
+  assert.doesNotMatch(styleSource, /\.member-modal/);
   assert.match(styleSource, /\.feishu-import-modal/);
   assert.match(styleSource, /\.library-import-button/);
   assert.match(styleSource, /@media \(max-width: 780px\)/);

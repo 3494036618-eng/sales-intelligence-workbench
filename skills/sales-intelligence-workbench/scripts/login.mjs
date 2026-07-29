@@ -24,7 +24,7 @@ async function promptLine(label) {
 
 async function promptSecret(label) {
   if (!process.stdin.isTTY || typeof process.stdin.setRawMode !== "function") {
-    throw new Error("当前终端不支持隐藏输入；请同时使用 --email 和 --password-stdin。");
+    throw new Error("当前终端不支持隐藏输入；请同时使用 --username 和 --password-stdin。");
   }
   return new Promise((resolve, reject) => {
     let value = "";
@@ -78,8 +78,8 @@ function parseResponse(text) {
 async function main() {
   ensureDirectories();
   const apiUrl = readOption("--api-url") || serverAddress().url;
-  let email = readOption("--email") || "";
-  if (!email) email = await promptLine("工作台登录邮箱：");
+  let username = readOption("--username") || readOption("--email") || "";
+  if (!username) username = await promptLine("工作台用户名：");
   const password = hasFlag("--password-stdin")
     ? fs.readFileSync(0, "utf8").replace(/[\r\n]+$/, "")
     : await promptSecret("工作台登录密码：");
@@ -87,7 +87,7 @@ async function main() {
   const response = await fetch(`${apiUrl.replace(/\/$/, "")}/api/auth/cli-login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ username, password }),
   });
   const payload = parseResponse(await response.text());
   if (!response.ok) {
@@ -108,13 +108,12 @@ async function main() {
     expires_at: new Date(issuedAt + (Number(session.expires_in) || 3600) * 1000).toISOString(),
     user: {
       id: session.user?.id || "",
-      email: session.user?.email || email,
-      display_name: session.user?.display_name || email,
-      role: session.user?.role || "",
+      username: session.user?.username || username,
+      display_name: session.user?.display_name || username,
     },
   });
-  console.log(`CLI 登录成功：${session.user?.display_name || email}（${session.user?.role || "已授权"}）`);
-  console.log(`会话已加密传输并以 0600 权限保存到：${paths.cliSessionFile}`);
+  console.log(`CLI 登录成功：${session.user?.display_name || username}`);
+  console.log(`会话已以 0600 权限保存到：${paths.cliSessionFile}`);
 }
 
 main();

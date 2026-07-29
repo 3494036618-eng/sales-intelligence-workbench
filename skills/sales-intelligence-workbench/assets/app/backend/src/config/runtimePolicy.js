@@ -92,15 +92,9 @@ export function createRuntimePolicy(options = {}) {
     blockers.push("public or proxied deployments require AUTH_COOKIE_SECURE=true");
   }
   if (trustProxy) {
-    const redirectUrl = parseAbsoluteUrl(env.value("AUTH_REDIRECT_URL", ""));
     const allowedOrigins = parseOrigins(env.value("ALLOWED_ORIGINS", ""));
-    if (!redirectUrl || redirectUrl.protocol !== "https:") {
-      blockers.push("proxied deployments require an HTTPS AUTH_REDIRECT_URL");
-    }
     if (!allowedOrigins.length || allowedOrigins.some((origin) => !origin || origin.protocol !== "https:")) {
       blockers.push("proxied deployments require explicit HTTPS ALLOWED_ORIGINS");
-    } else if (redirectUrl && !allowedOrigins.some((origin) => origin.origin === redirectUrl.origin)) {
-      blockers.push("ALLOWED_ORIGINS must include the AUTH_REDIRECT_URL origin");
     }
   }
 

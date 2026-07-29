@@ -12,8 +12,8 @@
 - Supabase service role 只存在于后端进程。
 - 业务 API 必须启用 Supabase Auth；网页使用 HttpOnly、SameSite=Strict Cookie，写操作额外校验 CSRF。
 - CLI 使用用户级短期 Bearer 会话，本机文件权限 `0600`；不得把令牌放入参数、日志或仓库。
-- Provider 管理、运行追踪和任务管理只允许 admin/owner；普通 member 只能执行业务写入，viewer 只读。
-- 所有业务读取和写入按 `APP_WORKSPACE_ID` 隔离。
+- 所有业务、Provider 管理、运行追踪、任务管理和数据导出仅对唯一的本机管理员开放。
+- 所有业务读取和写入按 `APP_WORKSPACE_ID` 隔离；底层账号归属记录只用于鉴权和数据隔离，不代表产品提供成员系统。
 - OpenViking URI 按 Workspace、企业和来源分层。
 - OpenViking URI、Provider raw reference、Service Role 和证据内部包不得通过业务 DTO 返回前端。
 - 飞书导入只读取用户授权范围，避免把原始会话写入日志。

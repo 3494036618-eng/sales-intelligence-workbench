@@ -1,9 +1,9 @@
 ---
 name: sales-intelligence-workbench
-description: 从 0 到 1 搭建、配置、验收和维护真实数据驱动的销售团队工作台，覆盖需求澄清、Agent Plan 模型、专业数据集（DataPro）、豆包搜索（联网搜索）、AI Native 应用开发底座（Supabase）、Agent 记忆（OpenViking）、Codex CLI 调度飞书 CLI 导入资料，以及企业搜索、档案和资料问答闭环。用户要求搭建销售工作台、部署或继续开发该项目、导入销售资料、排查 Provider、迁移数据库、备份恢复或验收真实业务链路时使用。
+description: 从 0 到 1 搭建、配置、验收和维护真实数据驱动的销售智能工作台，覆盖需求澄清、Agent Plan 模型、专业数据集（DataPro）、豆包搜索（联网搜索）、AI Native 应用开发底座（Supabase）、Agent 记忆（OpenViking）、Codex CLI 调度飞书 CLI 导入资料，以及企业搜索、档案和资料问答闭环。用户要求搭建销售工作台、部署或继续开发该项目、导入销售资料、排查 Provider、迁移数据库、备份恢复或验收真实业务链路时使用。
 ---
 
-# 销售团队工作台 Builder
+# 销售智能工作台 Builder
 
 这是一个 Builder Skill：先理解用户的销售目标，再安装经过测试的完整前后端模板，连接用户自己的 Agent Plan、AI Native 应用开发底座（Supabase）、Agent 记忆（OpenViking）和资料来源，最后用真实业务闭环验收。不得用演示企业、固定报告、Mock Provider 或静态来源冒充真实链路。
 
@@ -14,7 +14,7 @@ description: 从 0 到 1 搭建、配置、验收和维护真实数据驱动的�
 使用以下版本化入口；其他发行位置也必须固定到已发布的 tag 或经过审核的 commit SHA：
 
 ```text
-帮我初始化销售助手：https://github.com/3494036618-eng/sales-intelligence-workbench/blob/v0.9.1/skills/sales-intelligence-workbench/SKILL.md
+帮我初始化销售助手：https://github.com/3494036618-eng/sales-intelligence-workbench/blob/v0.9.2/skills/sales-intelligence-workbench/SKILL.md
 ```
 
 如果当前环境中不存在 `{baseDir}/scripts/status.mjs`，说明本 Skill 是从远程 URL 打开的。
@@ -237,9 +237,15 @@ node {baseDir}/scripts/start.mjs
 node {baseDir}/scripts/status.mjs
 ```
 
-首次打开页面时创建本工作区的首位管理员。之后所有业务页面和写操作都要求登录；管理员状态与业务页面分离。
+首次打开页面时设置唯一的本机管理员用户名和密码，无需邮箱、邮件确认或公开注册。之后所有业务页面和写操作都要求该管理员登录。
 
-当前 Beta 是单工作区、单人使用，以及本机或受控内网自托管模式，不提供成员邀请、角色管理、公网生产 SaaS 或 SLA。密码恢复依赖 Supabase Auth 邮件服务；如未来开放公网，必须配置 `AUTH_REDIRECT_URL`、Auth Redirect URLs 允许列表和自有 SMTP，具体要求见 `references/provider-configuration.md`。
+当前 Beta 是单工作区、单管理员，以及本机或受控内网自托管模式，没有成员或角色系统，也不承诺公网生产 SaaS 或 SLA。忘记密码时只能在安装工作台的本机交互式重置，不能要求用户接收邮件：
+
+```bash
+node {baseDir}/scripts/reset-password.mjs
+```
+
+密码必须隐藏输入，不得放入命令行参数、日志、聊天或仓库。
 
 后端和前端由同一进程、同一地址提供；不要另开静态前端。停止不会删除配置和数据：
 
@@ -253,7 +259,7 @@ node {baseDir}/scripts/stop.mjs
 
 本项目规定使用 **Codex CLI 调度飞书 CLI**，不以 Feishu MCP 或群机器人替代用户态读取。先阅读 `references/feishu-import.md`。
 
-先为导入命令建立工作台用户会话（密码隐藏输入，令牌仅保存到本机 `0600` 状态文件）：
+先为导入命令建立本机管理员会话（密码隐藏输入，令牌仅保存到本机 `0600` 状态文件）：
 
 ```bash
 node {baseDir}/scripts/login.mjs
@@ -265,7 +271,7 @@ node {baseDir}/scripts/import-feishu.mjs \
   --doc "https://example.feishu.cn/wiki/..."
 ```
 
-会话导入可使用 `--p2p-user <联系人姓名>` 或 `--chat-id <oc_会话ID>`；云文档只接受完整链接。启用 `FEISHU_CLI_IMPORT_ENABLED=true` 后，登录用户也可在“历史资料”模块使用“导入飞书资料”。两种入口都会先由 `lark-cli` 读取：正文只写入当前企业的 OpenViking 目录，Supabase 只保存来源、游标、内容指纹和 OpenViking 引用。
+会话导入可使用 `--p2p-user <联系人姓名>` 或 `--chat-id <oc_会话ID>`；云文档只接受完整链接。启用 `FEISHU_CLI_IMPORT_ENABLED=true` 后，本机管理员也可在“历史资料”模块使用“导入飞书资料”。两种入口都会先由 `lark-cli` 读取：正文只写入当前企业的 OpenViking 目录，Supabase 只保存来源、游标、内容指纹和 OpenViking 引用。
 成功导入后，Builder 仅保存时间、企业 ID 和来源类型的脱敏回执，不复制飞书正文或凭证。
 
 使用结束后可删除本机 CLI 会话：
@@ -314,12 +320,12 @@ node {baseDir}/scripts/restore.mjs --backup-dir /绝对路径/备份目录
 node {baseDir}/scripts/upgrade.mjs --source /绝对路径/新源码
 ```
 
-`backup.mjs` 是运维级完整备份；`export-workspace.mjs` 仅允许 `owner` 使用，输出可迁移的
-销售业务数据并排除密钥、Provider 原文和 OpenViking 内部 URI。两类文件都包含私密业务
+`backup.mjs` 是运维级完整备份；`export-workspace.mjs` 仅允许本机管理员使用，输出可迁移
+的销售业务数据并排除密钥、Provider 原文和 OpenViking 内部 URI。两类文件都包含私密业务
 数据，默认以 `0600` 保存，禁止提交到仓库。
 
-关键业务写操作、Provider 探测和工作区导出会写入脱敏审计事件；`admin` 和 `owner`
-可通过 `/api/admin/audit-events` 查询，普通成员不能读取。
+关键业务写操作、Provider 探测和工作区导出会写入脱敏审计事件；本机管理员可通过
+`/api/admin/audit-events` 查询。
 
 恢复默认只预检；执行写入还需原恢复脚本要求的 `--apply`、独立目标和确认参数。升级前先停止服务并建议备份。
 

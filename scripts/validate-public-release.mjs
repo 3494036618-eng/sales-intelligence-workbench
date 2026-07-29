@@ -27,6 +27,7 @@ const requiredPaths = [
   "SECURITY.md",
   "THIRD_PARTY_NOTICES.md",
   "backend/.env.example",
+  "backend/scripts/reset-local-password.mjs",
   "docs/README.md",
   "docs/api/api-contract.md",
   "docs/database/supabase-schema.md",
@@ -34,6 +35,7 @@ const requiredPaths = [
   "package-lock.json",
   "package.json",
   "skills/sales-intelligence-workbench/SKILL.md",
+  "skills/sales-intelligence-workbench/scripts/reset-password.mjs",
 ];
 const forbiddenFilePatterns = [
   /^\.DS_Store$/i,
@@ -188,6 +190,11 @@ const providerConfiguration = fs.readFileSync(
 const envExample = fs.readFileSync(path.join(root, "backend", ".env.example"), "utf8");
 const frontendApp = fs.readFileSync(path.join(root, "frontend", "app.js"), "utf8");
 const frontendStyles = fs.readFileSync(path.join(root, "frontend", "styles.css"), "utf8");
+const authService = fs.readFileSync(path.join(root, "backend", "src", "security", "authService.js"), "utf8");
+const resetPassword = fs.readFileSync(
+  path.join(root, "skills", "sales-intelligence-workbench", "scripts", "reset-password.mjs"),
+  "utf8",
+);
 const salesService = fs.readFileSync(path.join(root, "backend", "src", "services", "salesService.js"), "utf8");
 const canonicalSkillUrl = `https://github.com/3494036618-eng/sales-intelligence-workbench/blob/v${packageJson.version}/skills/sales-intelligence-workbench/SKILL.md`;
 
@@ -221,6 +228,26 @@ if (/DEMO_MODE|SALES_WORKBENCH_MODE|safe-demo|applySafeRecordingData/.test(front
 }
 if (/runtime-status\.demo|demo-mode|mode-demo/.test(frontendStyles)) {
   issues.push("frontend styles retain a public demo-mode state");
+}
+if (!/name="username" autocomplete="username"/.test(frontendApp) || /name="email"|type="email"/.test(frontendApp)) {
+  issues.push("frontend authentication is not username-only");
+}
+if (/password\/recover|password\/update|找回密码|重置邮件|工作区成员|成员管理|成员邀请/.test(frontendApp)) {
+  issues.push("frontend exposes an email-recovery or member-management flow");
+}
+if (!/internalOwnerEmail/.test(authService) || !/email_confirm:\s*true/.test(authService)) {
+  issues.push("single-administrator bootstrap is not server-confirmed");
+}
+if (!/reset-password\.mjs/.test(readme) || !/reset-password\.mjs/.test(skill)) {
+  issues.push("README or Skill is missing the local password reset command");
+}
+if (/AUTH_REDIRECT_URL|自有 SMTP|密码恢复依赖/.test(readme + skill + deployment + providerConfiguration)) {
+  issues.push("public guidance still requires email password recovery");
+}
+if (!/promptSecret\("设置新密码："\)/.test(resetPassword)
+  || !/input:\s*`\$\{password\}\\n`/.test(resetPassword)
+  || /--password|readOption\(.+password/.test(resetPassword)) {
+  issues.push("local password reset does not keep the password out of shell arguments");
 }
 if (/fixtures\/salesData|salesSeedData|demoProfessionalSources|demoPublicSources|allow_fixture_data|allow_provider_fallback/.test(salesService)) {
   issues.push("SalesService contains runtime fixture or provider-fallback logic");
