@@ -100,7 +100,7 @@ async function inspectLiveDoctor(filePath, ttlMs) {
       fresh,
       age_ms: ageMs,
       ttl_ms: ttlMs,
-      production_ready: Boolean(report.backend?.production_ready),
+      runtime_ready: Boolean(report.backend?.runtime_ready),
       blocker_count: Array.isArray(report.backend?.blockers) ? report.backend.blockers.length : 0,
       checks,
     };
@@ -135,11 +135,8 @@ export class AdminStatusService {
       schema_version: 1,
       read_only: true,
       deployment: {
-        app_mode: this.runtimePolicy.mode,
-        repository_mode: providerStatus.repository?.active || value("REPOSITORY_MODE", "memory"),
+        repository_mode: providerStatus.repository?.active || value("REPOSITORY_MODE", "supabase"),
         fail_closed: Boolean(this.runtimePolicy.fail_closed),
-        fixture_data_enabled: Boolean(this.runtimePolicy.allow_fixture_data),
-        provider_fallback_enabled: Boolean(this.runtimePolicy.allow_provider_fallback),
         host,
         port: finiteNumber(value("PORT", "8787"), 8787),
         loopback_only: ["127.0.0.1", "::1", "localhost"].includes(host),
@@ -150,7 +147,6 @@ export class AdminStatusService {
         name: String(value("APP_WORKSPACE_NAME", "Sales Workbench")).slice(0, 160),
       },
       providers: (providerStatus.providers || [])
-        .filter((provider) => provider.id !== "fixture")
         .map((provider) => ({
           id: provider.id,
           label: provider.label,

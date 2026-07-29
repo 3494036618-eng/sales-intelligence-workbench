@@ -8,20 +8,18 @@ const backendDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".
 const rootDir = path.resolve(backendDir, "..");
 const appSource = await fs.readFile(path.join(rootDir, "frontend", "app.js"), "utf8");
 const textFormatSource = await fs.readFile(path.join(rootDir, "frontend", "text-format.js"), "utf8");
-const servicesSource = await fs.readFile(path.join(rootDir, "frontend", "services.js"), "utf8");
 const htmlSource = await fs.readFile(path.join(rootDir, "frontend", "index.html"), "utf8");
 const styleSource = await fs.readFile(path.join(rootDir, "frontend", "styles.css"), "utf8");
 
-test("formal frontend starts empty and keeps recording fixtures behind demo mode", () => {
-  assert.match(appSource, /if \(DEMO_MODE\) applySafeRecordingData\(\);\s*else prepareConnectedState\(\);/);
-  assert.match(appSource, /function prepareConnectedState\(\) \{[\s\S]*?goals = \[\];[\s\S]*?companies = \{\};/);
-  assert.match(appSource, /if \(DEMO_MODE && isBydItem\(item\)\) return \[\];/);
-  assert.match(appSource, /if \(DEMO_MODE && isBydItem\(company\(state\.activeCompanyId\)\)\)/);
-  assert.doesNotMatch(appSource, /if \(isBydItem\(item\)\) return \[\];/);
+test("formal frontend starts empty and has no user-selectable fixture mode", () => {
+  assert.match(appSource, /let goals = \[\];\s+let companies = \{\};/);
+  assert.match(appSource, /function resetConnectedState\(\) \{[\s\S]*?goals = \[\];[\s\S]*?companies = \{\};/);
+  assert.doesNotMatch(appSource, /DEMO_MODE|SALES_WORKBENCH_MODE|safe-demo|applySafeRecordingData/);
+  assert.doesNotMatch(appSource, /yutong04|南区销售工作台|星澜新能源|曜驰智能/);
 });
 
 test("formal frontend keeps the sales workspace free of backend operations content", () => {
-  assert.match(appSource, /DEMO_MODE \? "南区销售工作台" : "销售智能工作台"/);
+  assert.match(appSource, /<strong>销售智能工作台<\/strong>/);
   assert.doesNotMatch(appSource, /api\("\/providers\/status"\)/);
   assert.doesNotMatch(appSource, /api\("\/admin\/status"\)/);
   assert.match(appSource, /\/jobs\?job_type=sales_dossier_generation&entity_id=/);
@@ -101,7 +99,7 @@ test("dossier versions and citations use API evidence only in formal mode", () =
   assert.doesNotMatch(appSource, /providerRunId|provider_run_id/);
   assert.match(appSource, /data-dossier="\$\{escapeHtml\(update\.id\)\}"/);
   assert.doesNotMatch(appSource, /与上一版比较|data-compare-dossier|version-comparison|\/compare\//);
-  assert.match(appSource, /if \(!DEMO_MODE\) return \[\];/);
+  assert.match(appSource, /if \(update\.citations\?\.length\) return update\.citations;\s+return \[\];/);
   assert.match(appSource, /暂无可验证的引用来源/);
   assert.match(appSource, /source\.qualityLabel/);
   assert.match(appSource, /source\.freshnessLabel/);
@@ -123,7 +121,7 @@ test("formal frontend has retryable connection and request-trace errors", () => 
   );
   assert.match(appSource, /id="retryBoot"/);
   assert.match(appSource, /\$\("#retryBoot"\)\?\.addEventListener\("click"/);
-  assert.match(appSource, /后端响应超时，请检查 API 服务和运行模式配置/);
+  assert.match(appSource, /后端响应超时，请检查 API 服务和运行配置/);
 });
 
 test("formal frontend authenticates before loading business data and protects mutations with CSRF", () => {
@@ -172,9 +170,7 @@ test("formal frontend assets carry the current cache key and responsive runtime 
 });
 
 test("HTTP-hosted frontend uses the same-origin API by default", () => {
-  for (const source of [appSource, servicesSource]) {
-    assert.match(source, /window\.location\.origin/);
-    assert.match(source, /`\$\{window\.location\.origin\}\/api`/);
-    assert.match(source, /\["http:", "https:"\]\.includes\(window\.location\.protocol\)/);
-  }
+  assert.match(appSource, /window\.location\.origin/);
+  assert.match(appSource, /`\$\{window\.location\.origin\}\/api`/);
+  assert.match(appSource, /\["http:", "https:"\]\.includes\(window\.location\.protocol\)/);
 });

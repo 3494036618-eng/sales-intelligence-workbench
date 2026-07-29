@@ -45,10 +45,7 @@ test("workspace export retains portable business content and removes runtime int
   const service = new SalesService({
     env: envReader(),
     runtimePolicy: {
-      mode: "development",
       fail_closed: false,
-      allow_fixture_data: false,
-      allow_provider_fallback: false,
     },
     seed: {
       goals: [{

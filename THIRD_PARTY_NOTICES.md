@@ -11,10 +11,10 @@ GitHub Actions 工作流引用 `actions/checkout` 和 `actions/setup-node`。它
 以下能力由用户自行开通、授权和配置，项目只通过公开接口或本机命令调用，不复制或再分发其服务端代码：
 
 - 火山方舟 Agent Plan 模型服务
-- 专业数据集 DataPro
-- 豆包搜索
-- OpenViking Service
-- 火山引擎 Supabase
+- 专业数据集（DataPro）
+- 豆包搜索（联网搜索）
+- Agent 记忆（OpenViking）
+- AI Native 应用开发底座（Supabase）
 - 飞书 CLI
 - 火山引擎 Supabase CLI
 
@@ -22,4 +22,5 @@ GitHub Actions 工作流引用 `actions/checkout` 和 `actions/setup-node`。它
 
 ## 发布者责任
 
-根目录已提供 Apache License 2.0 文本；正式公开仓库前，代码所有方仍需确认产权边界并完成内部开源批准。本文件是组件清单，不替代该批准流程。
+源码的使用与分发遵循根目录 [LICENSE](LICENSE)。贡献者和发布者应确保有权提交、分发相关
+代码与素材；外部服务仍受各自服务协议、数据处理条款和费用规则约束。

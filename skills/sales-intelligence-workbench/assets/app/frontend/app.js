@@ -4,17 +4,7 @@
   const defaultApiBase = ["http:", "https:"].includes(window.location.protocol)
     ? `${window.location.origin}/api`
     : "http://127.0.0.1:8787/api";
-  const API_BASE = (window.AGENT_DEMO_API_BASE || defaultApiBase).replace(/\/$/, "");
-  const runtimeParams = new URLSearchParams(window.location.search);
-  const requestedMode = String(
-    window.SALES_WORKBENCH_MODE
-      || runtimeParams.get("mode")
-      || (runtimeParams.has("safe-demo") ? "demo" : "development")
-  ).toLowerCase();
-  const APP_MODE = ["development", "production", "demo"].includes(requestedMode)
-    ? requestedMode
-    : "development";
-  const DEMO_MODE = APP_MODE === "demo";
+  const API_BASE = (window.SALES_WORKBENCH_API_BASE || defaultApiBase).replace(/\/$/, "");
   const authRedirectParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
   const authRedirectType = String(authRedirectParams.get("type") || "").toLowerCase();
   let recoveryAccessToken = authRedirectType === "recovery"
@@ -23,7 +13,6 @@
   if (recoveryAccessToken) {
     window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
   }
-  const isPlaceholderUrl = (value) => /(^https?:\/\/)?(www\.)?example\.(com|test)\b/i.test(String(value || ""));
   const TARGET_STATUS_FILTERS = ["全部", "新商机", "初步接触", "需求确认", "商务推进", "成交归档"];
   const MATERIAL_FILTERS = ["全部", "档案", "飞书会话", "云文档"];
   const DOSSIER_SECTION_TITLES = [
@@ -43,224 +32,13 @@
     splitReadableBlocks,
   } = window.SalesTextFormat;
 
-  let goals = [
-    {
-      id: "auto",
-      name: "新能源车企合作跟进",
-      stats: "4 家企业",
-      placeholder: "输入新能源车企、区域或公司关键词",
-      related: ["byd_auto", "qichen", "lanche", "futureAuto", "lianhePower", "haichuan"],
-      pool: ["shanghaiAuto", "qichen", "haichuan", "lanche"],
-    },
-    {
-      id: "finance",
-      name: "华东金融机构拓展",
-      stats: "2 家企业",
-      placeholder: "输入金融机构、区域或公司关键词",
-      related: ["pujiangBank", "haorongSec", "donghaiTrust", "yunqiFin"],
-      pool: ["pujiangBank", "haorongSec"],
-    },
-    {
-      id: "manufacturing",
-      name: "制造业智能化升级",
-      stats: "0 家企业",
-      placeholder: "输入制造业、工厂或区域关键词",
-      related: ["mingzhou", "kecheng", "hengyuan"],
-      pool: [],
-    },
-  ];
-
-  let companies = {
-    qichen: {
-      id: "qichen",
-      name: "云衡智行科技有限公司",
-      initial: "小",
-      location: "广州市",
-      industry: "新能源汽车",
-      tags: ["新能源汽车", "广州市", "智能驾驶"],
-      status: "需求确认中",
-      progress:
-        "历史会议提到数据安全和私有化部署，但暂未确认预算和排期。",
-      evidence: "依据：会议纪要、已有企业档案、公开来源",
-      next: "下一步重点确认预算窗口、数据合规要求和供应商准入流程。",
-      updatedAt: "2025-06-15 18:30",
-      updates: [
-        {
-          id: "qichen-dossier-001",
-          title: "智能座舱方向资料更新",
-          body:
-            "公开资料显示，智能座舱与数据服务方向适合作为下一轮需求验证背景。",
-          type: "公开资料更新",
-          date: "2025-06-13",
-          url: "",
-        },
-        {
-          id: "qichen-dossier-002",
-          title: "供应商合作资料更新",
-          body:
-            "供应商合作资料可用于判断企业对智能化、数据安全和合规管理的关注点。",
-          type: "公开资料更新",
-          date: "2025-06-10",
-          url: "",
-        },
-        {
-          id: "qichen-dossier-003",
-          title: "数据合规资料更新",
-          body:
-            "数据合规资料可用于补充车企数据安全与隐私合规方向判断。",
-          type: "公开资料更新",
-          date: "2025-06-07",
-          url: "",
-        },
-        {
-          id: "qichen-dossier-004",
-          title: "自动驾驶数据方向资料更新",
-          body:
-            "专业数据集资料可用于补充自动驾驶数据服务方向的销售背景。",
-          type: "企业工商数据库",
-          date: "2025-06-05",
-          url: "",
-        },
-        {
-          id: "qichen-dossier-005",
-          title: "云服务合作资料更新",
-          body:
-            "公开资料可用于补充云底座、数据安全与 AI 应用方向的沟通背景。",
-          type: "公开资料更新",
-          date: "2025-05-30",
-          url: "",
-        },
-      ],
-      library: [
-        { title: "Q2 车企智能化合作会议纪要", time: "2025-06-14 18:30" },
-        { title: "智能座舱方案讨论记录", time: "2025-06-10 16:45" },
-        { title: "历史沟通摘录", time: "2025-06-06 11:20" },
-      ],
-      qaAnswer:
-        "历史会议纪要显示，对方重点关注数据安全、私有化部署和供应商准入流程；目前资料中尚未确认预算和排期。",
-    },
-    shanghaiAuto: {
-      id: "shanghaiAuto",
-      name: "曜驰智能汽车科技有限公司",
-      initial: "蔚",
-      location: "上海市",
-      industry: "新能源汽车",
-      tags: ["新能源汽车", "上海市", "智能座舱"],
-      status: "商务推进",
-      progress: "车主服务与售后数字化机会明确，适合推进小范围PoC。",
-      evidence: "依据：企业档案、飞书资料、公开资料更新",
-      next: "下一步确认试点负责人、知识库范围、数据权限和预算窗口。",
-      updatedAt: "2025-06-12 10:00",
-      updates: [
-        {
-          id: "shanghai-auto-dossier-001",
-          title: "车主服务与售后数字化机会更新",
-          body: "最新资料显示，曜驰的跟进机会已从单一智能座舱问答扩展到车主服务知识库、换电补能咨询、售后工单协同和用户运营问答四类场景。",
-          type: "公开资料更新",
-          date: "2025-06-12",
-          url: "",
-        },
-      ],
-      library: [
-        { title: "曜驰智能座舱合作会议纪要", time: "2026-06-14 15:20", sourceType: "飞书会议纪要" },
-        { title: "曜驰客户成功方案云文档", time: "2026-06-13 19:10", sourceType: "云文档" },
-        { title: "曜驰近期沟通摘要", time: "2026-06-12 11:40", sourceType: "飞书会话" },
-      ],
-      qaAnswer:
-        "建议先确认试点范围、数据权限和预算窗口；这些信息补齐后，可以推进到试点方案和报价沟通。",
-    },
-    byd_auto: {
-      id: "byd_auto",
-      name: "星澜新能源科技有限公司",
-      initial: "比",
-      location: "深圳市",
-      industry: "新能源汽车",
-      tags: ["新能源汽车", "深圳市", "动力电池", "智能座舱"],
-      status: "新商机",
-      progress: "新加入目标企业，尚无历史资料，待生成最新档案。",
-      evidence: "依据：专业数据库、公开来源",
-      next: "下一步生成最新档案，并确认对接部门、试点场景和预算窗口。",
-      updatedAt: "2026-06-16 09:30",
-      updates: [],
-      library: [],
-      qaAnswer: "当前企业为新加入目标企业，尚无历史资料；请先生成最新档案后再围绕当前进展提问。",
-    },
-    lanche: {
-      id: "lanche",
-      name: "凌越汽车科技有限公司",
-      initial: "极",
-      industry: "新能源汽车",
-      location: "杭州市",
-      status: "新商机",
-      progress: "已进入目标企业池，等待获取最近档案和历史沟通资料。",
-      tags: ["新能源汽车", "杭州市", "智能座舱"],
-    },
-    futureAuto: { id: "futureAuto", name: "辰途汽车科技有限公司", initial: "零", industry: "新能源汽车", location: "杭州市" },
-    lianhePower: { id: "lianhePower", name: "青瓴动力科技有限公司", initial: "青", industry: "动力电池", location: "宁德市" },
-    haichuan: {
-      id: "haichuan",
-      name: "远舟汽车科技有限公司",
-      initial: "理",
-      industry: "新能源汽车",
-      location: "北京市",
-      status: "初步接触",
-      progress: "已有公开信息和基础企业档案，尚未形成明确采购计划。",
-      tags: ["新能源汽车", "家庭智能车", "北京市"],
-    },
-    pujiangBank: { id: "pujiangBank", name: "浦江数字银行股份有限公司", initial: "浦", industry: "银行", location: "深圳市" },
-    haorongSec: { id: "haorongSec", name: "浩融证券股份有限公司", initial: "浩", industry: "证券", location: "北京市" },
-    donghaiTrust: { id: "donghaiTrust", name: "东澜信托有限责任公司", initial: "东", industry: "信托", location: "深圳市" },
-    yunqiFin: { id: "yunqiFin", name: "云启金融科技集团股份有限公司", initial: "云", industry: "金融科技", location: "杭州市" },
-    mingzhou: { id: "mingzhou", name: "明洲精密制造有限公司", initial: "明", industry: "精密制造", location: "宁波" },
-    kecheng: { id: "kecheng", name: "科承工业设备有限公司", initial: "科", industry: "工业设备", location: "苏州" },
-    hengyuan: { id: "hengyuan", name: "恒源智能装备有限公司", initial: "恒", industry: "智能装备", location: "常州" },
-  };
-
-  function yaochiQaMessages() {
-    return [
-      {
-        role: "user",
-        text: "曜驰为什么适合继续推进？",
-      },
-      {
-        role: "assistant",
-        text: "最新档案和历史资料都指向售后服务数字化、车主服务知识库和门店工单协同，需求方向比较聚焦，适合继续推进小范围PoC。",
-        citations: ["车主服务与售后数字化机会更新", "曜驰智能座舱合作会议纪要"],
-      },
-      {
-        role: "user",
-        text: "下一次和曜驰沟通，应该先确认哪些问题？",
-      },
-      {
-        role: "assistant",
-        text: "建议先确认三件事：试点范围是否聚焦售后服务知识库，数据权限是否允许进入私有化环境，以及预算窗口是否能覆盖本季度试点。",
-        citations: ["曜驰智能座舱合作会议纪要", "曜驰客户成功方案云文档"],
-      },
-      {
-        role: "user",
-        text: "现在推进到商务前，还缺哪类资料？",
-      },
-      {
-        role: "assistant",
-        text: "当前还缺预算窗口、试点部门负责人和技术对接人信息；如果这三项补齐，就可以推进到试点方案和报价沟通。",
-        citations: ["曜驰近期沟通摘要", "曜驰智能座舱合作会议纪要"],
-      },
-      {
-        role: "user",
-        text: "如果只做一期PoC，先从哪个场景切入？",
-      },
-      {
-        role: "assistant",
-        text: "建议先从售后服务知识库切入，范围可控、资料来源明确，也更容易用响应准确率、工单处理时长和服务顾问采纳率衡量效果。",
-        citations: ["曜驰客户成功方案云文档", "曜驰近期沟通摘要"],
-      },
-    ];
-  }
+  let goals = [];
+  let companies = {};
 
   const state = {
-    activeGoalId: "auto",
-    activeCompanyId: "shanghaiAuto",
-    selectedDossierId: "qichen-dossier-001",
+    activeGoalId: "",
+    activeCompanyId: "",
+    selectedDossierId: "",
     targetStatusFilter: "全部",
     materialFilter: "全部",
     supportView: "library",
@@ -270,9 +48,9 @@
     bootLoading: true,
     bootError: "",
     auth: {
-      checked: DEMO_MODE,
+      checked: false,
       enabled: false,
-      authenticated: DEMO_MODE,
+      authenticated: false,
       bootstrapRequired: false,
       user: null,
     },
@@ -293,227 +71,14 @@
     sidebarNotice: "",
     jobsByCompany: {},
     mobileNavigationOpen: false,
-    qaMessages: yaochiQaMessages(),
-    qaMessagesByCompany: {
-      shanghaiAuto: yaochiQaMessages(),
-      byd_auto: [],
-    },
+    qaMessages: [],
+    qaMessagesByCompany: {},
   };
   let bootGeneration = 0;
   let feishuImportPollToken = 0;
   const jobPollTokens = new Map();
 
-  function applySafeRecordingData() {
-    goals = [
-      {
-        id: "auto",
-        name: "新能源车企合作跟进",
-        stats: "4 家企业",
-        placeholder: "输入新能源车企、区域或公司关键词",
-        related: ["byd_auto", "futureAuto", "lianhePower"],
-        pool: ["shanghaiAuto", "qichen", "haichuan", "lanche"],
-      },
-      {
-        id: "finance",
-        name: "华东金融机构拓展",
-        stats: "2 家企业",
-        placeholder: "输入金融机构、区域或公司关键词",
-        related: ["donghaiTrust", "yunqiFin"],
-        pool: ["pujiangBank", "haorongSec"],
-      },
-      {
-        id: "manufacturing",
-        name: "制造业智能化升级",
-        stats: "0 家企业",
-        placeholder: "输入制造业、工厂或区域关键词",
-        related: ["mingzhou", "kecheng", "hengyuan"],
-        pool: [],
-      },
-    ];
-
-    companies = {
-      shanghaiAuto: {
-        id: "shanghaiAuto",
-        name: "曜驰智能汽车科技有限公司",
-        initial: "曜",
-        location: "上海市",
-        industry: "新能源汽车",
-        tags: ["新能源汽车", "上海市", "智能座舱"],
-        status: "商务推进",
-        progress: "车主服务与售后数字化机会明确，适合推进小范围PoC。",
-        evidence: "依据：专业数据库、飞书资料、联网搜索",
-        next: "下一步确认试点负责人、知识库范围、数据权限和预算窗口。",
-        updatedAt: "2026-06-29 11:07",
-        updates: [
-          {
-            id: "yaochi-dossier-001",
-            title: "车主服务与售后数字化机会更新",
-            date: "2026-06-29 11:07",
-            bodyParagraphs: [
-              { text: "企业情况：专业数据库显示该企业聚焦新能源整车、智能座舱和售后服务数字化，现阶段销售机会适合从车主服务知识库切入。", citationIds: ["1"] },
-              { text: "近期动态：联网搜索显示其近期在售后运营、用户服务和数据合规方向投入增加，适合验证知识库问答、工单协同和服务助手场景。", citationIds: ["2", "3"] },
-              { text: "销售判断：当前最适合推进小范围PoC，先围绕服务顾问知识检索、门店工单总结和车主问题自动分流做效果验证。", citationIds: ["1", "3"] },
-              { text: "下一步建议：确认试点部门负责人、可接入资料范围、数据权限边界和预算窗口。", citationIds: ["2", "3"] },
-            ],
-            citations: [
-              { id: "1", label: "企业工商数据库", kind: "专业数据库", url: "" },
-              { id: "2", label: "企业风险数据库", kind: "专业数据库", url: "" },
-              { id: "3", label: "官网与公开新闻动态", kind: "联网搜索", url: "" },
-            ],
-          },
-        ],
-        library: [
-          { title: "曜驰智能座舱合作会议纪要", time: "2026-06-14 23:20", sourceType: "会议纪要" },
-          { title: "曜驰客户成功方案云文档", time: "2026-06-12 19:40", sourceType: "云文档" },
-          { title: "曜驰售后服务沟通摘录", time: "2026-06-10 16:30", sourceType: "飞书会话" },
-        ],
-        qaAnswer: "建议先确认三件事：试点范围是否聚焦售后服务知识库，数据权限是否允许进入私有化环境，以及预算窗口是否能覆盖本季度试点。",
-      },
-      qichen: {
-        id: "qichen",
-        name: "云衡智行科技有限公司",
-        initial: "云",
-        location: "广州市",
-        industry: "新能源汽车",
-        tags: ["新能源汽车", "广州市", "智能驾驶"],
-        status: "需求确认中",
-        progress: "历史会议提到数据安全和私有化部署，但暂未确认预算和排期。",
-        evidence: "依据：会议纪要、已有企业档案、公开来源",
-        next: "下一步重点确认预算窗口、数据合规要求和供应商准入流程。",
-        updatedAt: "2026-06-15 18:30",
-        updates: [
-          {
-            id: "yunheng-dossier-001",
-            title: "智能驾驶数据服务需求更新",
-            body: "现有资料显示，对方重点关注私有化部署、数据安全和供应商准入流程，适合先做需求澄清。",
-            type: "公开资料更新",
-            date: "2026-06-15",
-            url: "",
-          },
-        ],
-        library: [
-          { title: "云衡智能驾驶方案讨论记录", time: "2026-06-10 16:45", sourceType: "云文档" },
-          { title: "云衡历史沟通摘录", time: "2026-06-06 11:20", sourceType: "飞书会话" },
-        ],
-        qaAnswer: "历史资料显示，对方重点关注数据安全、私有化部署和供应商准入流程；目前尚未确认预算和排期。",
-      },
-      byd_auto: {
-        id: "byd_auto",
-        name: "星澜新能源科技有限公司",
-        initial: "星",
-        location: "深圳市",
-        industry: "新能源汽车",
-        tags: ["新能源汽车", "深圳市", "动力电池", "智能座舱"],
-        status: "新商机",
-        progress: "新加入目标企业，尚无历史资料，待生成最新档案。",
-        evidence: "依据：专业数据库、公开来源",
-        next: "下一步生成最新档案，并确认对接部门、试点场景和预算窗口。",
-        updatedAt: "2026-06-29 10:30",
-        updates: [],
-        library: [],
-        qaAnswer: "当前企业为新加入目标企业，尚无历史资料；请先生成最新档案后再围绕当前进展提问。",
-      },
-      lanche: { id: "lanche", name: "凌越汽车科技有限公司", initial: "凌", industry: "新能源汽车", location: "杭州市", status: "新商机", progress: "已进入目标企业池，等待获取最近档案和历史沟通资料。", tags: ["新能源汽车", "杭州市", "智能座舱"] },
-      futureAuto: { id: "futureAuto", name: "辰途汽车科技有限公司", initial: "辰", industry: "新能源汽车", location: "杭州市", tags: ["新能源汽车", "杭州市", "智能驾驶"] },
-      lianhePower: { id: "lianhePower", name: "青瓴动力科技有限公司", initial: "青", industry: "动力电池", location: "宁德市", tags: ["动力电池", "新能源产业链", "宁德市"] },
-      haichuan: { id: "haichuan", name: "远舟汽车科技有限公司", initial: "远", industry: "新能源汽车", location: "北京市", status: "初步接触", progress: "已有公开信息和基础企业档案，尚未形成明确采购计划。", tags: ["新能源汽车", "家庭智能车", "北京市"] },
-      pujiangBank: { id: "pujiangBank", name: "浦江数字银行股份有限公司", initial: "浦", industry: "银行", location: "上海市" },
-      haorongSec: { id: "haorongSec", name: "浩融证券股份有限公司", initial: "浩", industry: "证券", location: "北京市" },
-      donghaiTrust: { id: "donghaiTrust", name: "东澜信托有限责任公司", initial: "东", industry: "信托", location: "深圳市" },
-      yunqiFin: { id: "yunqiFin", name: "云启金融科技集团股份有限公司", initial: "云", industry: "金融科技", location: "杭州市" },
-      mingzhou: { id: "mingzhou", name: "明洲精密制造有限公司", initial: "明", industry: "精密制造", location: "宁波" },
-      kecheng: { id: "kecheng", name: "科承工业设备有限公司", initial: "科", industry: "工业设备", location: "苏州" },
-      hengyuan: { id: "hengyuan", name: "恒源智能装备有限公司", initial: "恒", industry: "智能装备", location: "常州" },
-    };
-
-    state.activeGoalId = "auto";
-    state.activeCompanyId = "shanghaiAuto";
-    state.selectedDossierId = "yaochi-dossier-001";
-    state.query = "";
-    state.hasSearched = false;
-    state.materialFilter = "全部";
-    state.supportView = "library";
-    state.targetStatusFilter = "全部";
-    state.qaMessagesByCompany = {
-      shanghaiAuto: yaochiQaMessages(),
-      byd_auto: [],
-    };
-    state.qaMessages = state.qaMessagesByCompany.shanghaiAuto;
-  }
-
-  function localSearchCompanyIds(goal, query) {
-    const normalized = String(query || "").trim().toLowerCase();
-    if (!normalized) return [];
-    return Object.values(companies)
-      .filter((item) => {
-        if (goal.pool.includes(item.id)) return false;
-        return [item.name, item.industry, item.location, ...(item.tags || [])]
-          .join(" ")
-          .toLowerCase()
-          .includes(normalized);
-      })
-      .map((item) => item.id);
-  }
-
-  function refreshSafeCompany(item) {
-    if (!item) return;
-    const isNewTarget = isBydItem(item);
-    const dossier = isNewTarget
-      ? {
-          id: "xinglan-dossier-001",
-          title: "星澜新能源最新销售档案",
-          date: "2026-06-29 11:07",
-          bodyParagraphs: [
-            { text: "企业情况：专业数据库显示该企业属于新能源整车和动力电池产业链重点主体，经营方向覆盖智能座舱、动力电池管理和售后服务数字化。", citationIds: ["1"] },
-            { text: "近期动态：联网搜索显示其正在补充渠道服务、数据安全和用户运营能力，适合作为新增目标企业进入第一轮需求确认。", citationIds: ["2", "3"] },
-            { text: "销售判断：该企业为新加入目标企业，当前未导入飞书会话、会议纪要或云文档资料，不应引用历史资料判断客户意向。", citationIds: ["1"] },
-            { text: "下一步建议：先确认对接部门、试点场景、数据权限边界和预算窗口，再决定是否推进售后知识库或智能客服PoC。", citationIds: ["2", "3"] },
-          ],
-          citations: [
-            { id: "1", label: "企业工商数据库", kind: "专业数据库", url: "" },
-            { id: "2", label: "企业风险数据库", kind: "专业数据库", url: "" },
-            { id: "3", label: "官网与公开新闻动态", kind: "联网搜索", url: "" },
-          ],
-        }
-      : {
-          id: `${item.id}-dossier-${Date.now()}`,
-          title: `${item.name} 最新销售档案`,
-          date: "2026-06-29 11:07",
-          bodyParagraphs: [
-            { text: `企业情况：专业数据库显示${item.name}当前仍聚焦${item.industry}相关业务，适合结合既有历史资料继续推进。`, citationIds: ["1"] },
-            { text: "近期动态：联网搜索显示其近期关注客户服务、运营效率和数据合规，适合围绕知识库问答和流程自动化继续验证。", citationIds: ["2"] },
-            { text: "下一步建议：结合历史沟通记录确认试点负责人、预算窗口和资料接入范围。", citationIds: ["1", "2"] },
-          ],
-          citations: [
-            { id: "1", label: "企业工商数据库", kind: "专业数据库", url: "" },
-            { id: "2", label: "官网与公开新闻动态", kind: "联网搜索", url: "" },
-          ],
-        };
-
-    item.updates = [dossier, ...(item.updates || []).filter((record) => record.id !== dossier.id)];
-    item.updatedAt = dossier.date;
-    if (isNewTarget) {
-      item.status = "需求确认";
-    }
-    item.progress = isNewTarget
-      ? "最新档案已生成，等待需求确认。"
-      : "已更新最新档案，建议结合历史资料推进下一轮商务沟通。";
-    state.selectedDossierId = dossier.id;
-  }
-
-  function answerSafeQuestion(item, question) {
-    const hasMaterials = materialRecords(item).length > 0;
-    const text = hasMaterials
-      ? "基于当前档案和历史资料，下一步建议先确认试点范围、数据权限、预算窗口和技术对接人；这些信息补齐后，可以推进到PoC方案和报价沟通。"
-      : "当前企业为新加入目标企业，尚无历史资料；只能基于最新档案判断。建议先确认对接部门、试点场景、数据权限边界和预算窗口。";
-    return {
-      role: "assistant",
-      text,
-      citations: hasMaterials ? ["历史资料", "企业档案"] : ["最新档案", "专业数据库"],
-    };
-  }
-
-  function prepareConnectedState() {
+  function resetConnectedState() {
     goals = [];
     companies = {};
     state.activeGoalId = "";
@@ -527,9 +92,6 @@
     state.feishuImportTask = null;
     state.feishuImportError = "";
   }
-
-  if (DEMO_MODE) applySafeRecordingData();
-  else prepareConnectedState();
 
   function cookieValue(name) {
     const prefix = `${name}=`;
@@ -669,10 +231,6 @@
     return `${message}${requestId}`;
   }
 
-  function isBydItem(item) {
-    return /byd_auto|星澜/i.test(`${item?.id || ""} ${item?.name || ""}`);
-  }
-
   function escapeHtml(value) {
     return String(value ?? "")
       .replace(/&/g, "&amp;")
@@ -754,7 +312,7 @@
   }
 
   async function loadLatestDossierJob(companyId) {
-    if (DEMO_MODE || !companyId) return null;
+    if (!companyId) return null;
     const jobs = await api(`/jobs?job_type=sales_dossier_generation&entity_id=${encodeURIComponent(companyId)}&limit=1`);
     const latest = Array.isArray(jobs) ? jobs[0] || null : null;
     if (latest) {
@@ -772,7 +330,7 @@
   }
 
   function monitorDossierJob(initialJob, companyId) {
-    if (DEMO_MODE || !initialJob?.id || !isActiveJob(initialJob) || jobPollTokens.has(initialJob.id)) return;
+    if (!initialJob?.id || !isActiveJob(initialJob) || jobPollTokens.has(initialJob.id)) return;
     const token = { active: true };
     jobPollTokens.set(initialJob.id, token);
 
@@ -902,16 +460,14 @@
       paragraphs: paragraphs.map((paragraph) => ({
         ...paragraph,
         citationIds: (paragraph.citationIds || [])
-          .map((id) => idMap.get(String(id)) || (DEMO_MODE ? String(id) : null))
+          .map((id) => idMap.get(String(id)) || null)
           .filter(Boolean),
       })),
     };
   }
 
   function materialRecords(item) {
-    if (DEMO_MODE && isBydItem(item)) return [];
-    const records = item.library || [];
-    return records;
+    return item.library || [];
   }
 
   function historicalDossierRecords(item) {
@@ -1057,12 +613,12 @@
   }
 
   function render() {
-    if (!DEMO_MODE && state.auth.checked && state.auth.enabled && !state.auth.authenticated) {
+    if (state.auth.checked && state.auth.enabled && !state.auth.authenticated) {
       $("#app").innerHTML = renderAuthScreen();
       bindAuthEvents();
       return;
     }
-    if (!DEMO_MODE && (state.bootLoading || state.bootError)) {
+    if (state.bootLoading || state.bootError) {
       $("#app").innerHTML = `
         <div class="sales-platform">
           ${renderTopbar()}
@@ -1093,13 +649,13 @@
 
   function renderTopbar() {
     const user = state.auth.user;
-    const displayName = DEMO_MODE ? "yutong04" : user?.display_name || "本地开发者";
+    const displayName = user?.display_name || "本地用户";
     const avatar = String(displayName || "工").slice(0, 1).toUpperCase();
     return `
       <header class="sales-topbar">
         <div class="brand">
           <span class="brand-icon">客</span>
-          <strong>${DEMO_MODE ? "南区销售工作台" : "销售智能工作台"}</strong>
+          <strong>销售智能工作台</strong>
         </div>
         <div class="topbar-right">
           ${state.auth.authenticated && !state.bootLoading ? `
@@ -1109,7 +665,7 @@
           ` : ""}
           <span class="user-avatar">${escapeHtml(avatar)}</span>
           <span class="user-name">${escapeHtml(displayName)}</span>
-          ${!DEMO_MODE && state.auth.enabled ? `<button class="logout-button" id="logoutButton" type="button" aria-label="退出登录" title="退出登录"><span class="logout-label">退出</span><span class="logout-icon" aria-hidden="true">↪</span></button>` : ""}
+          ${state.auth.enabled ? `<button class="logout-button" id="logoutButton" type="button" aria-label="退出登录" title="退出登录"><span class="logout-label">退出</span><span class="logout-icon" aria-hidden="true">↪</span></button>` : ""}
         </div>
       </header>
     `;
@@ -1202,7 +758,7 @@
   }
 
   function renderFeishuImportModal(item) {
-    if (!state.feishuImportOpen || !item?.id || DEMO_MODE) return "";
+    if (!state.feishuImportOpen || !item?.id) return "";
     const task = state.feishuImportTask;
     const active = ["queued", "running"].includes(task?.status);
     const completed = task?.status === "succeeded";
@@ -1551,21 +1107,7 @@
   function dossierSources(update) {
     if (!update) return [];
     if (update.citations?.length) return update.citations;
-    if (!DEMO_MODE) return [];
-    return [
-      {
-        id: 1,
-        label: "企业工商数据库",
-        kind: "专业数据库",
-        url: "",
-      },
-      {
-        id: 2,
-        label: update.type,
-        kind: "联网搜索",
-        url: isPlaceholderUrl(update.url) ? "" : update.url,
-      },
-    ];
+    return [];
   }
 
   function renderDossierDetail(update) {
@@ -1575,10 +1117,7 @@
       ? update.bodyParagraphs
       : update.body
         ? [{ text: update.body, citationIds: [] }]
-        : DEMO_MODE ? [
-          { text: update.body, citationIds: ["1"] },
-          { text: "结合公开信息判断，这条记录更适合用于下一轮销售沟通前的背景准备，重点确认预算、排期、供应商准入和数据合规要求。", citationIds: ["2"] },
-        ] : [];
+        : [];
     const { sources: orderedSources, paragraphs } = normalizeDossierDisplay(sources, rawParagraphs);
     return `
       <article class="dossier-detail">
@@ -1672,7 +1211,7 @@
               `).join("")}
             </div>
             <div class="library-tools">
-              ${!DEMO_MODE ? `<button class="secondary-button library-import-button" id="openFeishuImport" type="button" ${state.busy ? "disabled" : ""}>导入飞书资料</button>` : ""}
+              <button class="secondary-button library-import-button" id="openFeishuImport" type="button" ${state.busy ? "disabled" : ""}>导入飞书资料</button>
             </div>
           </div>
         </div>
@@ -2040,7 +1579,7 @@
       } catch {
         // Local session is cleared by the server whenever it can be reached.
       }
-      prepareConnectedState();
+      resetConnectedState();
       state.auth = {
         checked: true,
         enabled: true,
@@ -2069,24 +1608,6 @@
       state.notice = "";
       state.sidebarNotice = "";
       render();
-      if (DEMO_MODE) {
-        const id = `goal-${Date.now()}`;
-        goals.unshift({
-          id,
-          name,
-          stats: goalStats(0),
-          placeholder: `输入${name}相关企业关键词`,
-          related: [],
-          pool: [],
-        });
-        state.activeGoalId = id;
-        state.activeCompanyId = "";
-        state.showNewGoal = false;
-        state.notice = "已新增销售目标";
-        state.busy = "";
-        render();
-        return;
-      }
       try {
         const created = await api("/sales-goals", { method: "POST", body: { name } });
         goals.unshift({
@@ -2123,11 +1644,6 @@
         state.sidebarNotice = "";
         state.busy = `goal:${state.activeGoalId}`;
         render();
-        if (DEMO_MODE) {
-          state.busy = "";
-          render();
-          return;
-        }
         try {
           await loadGoalCompanies(state.activeGoalId);
           await hydrateVisibleCompany();
@@ -2156,14 +1672,6 @@
       state.sidebarNotice = "";
       state.notice = "";
       render();
-      if (DEMO_MODE) {
-        const goal = activeGoal();
-        goal.related = localSearchCompanyIds(goal, state.query);
-        state.sidebarNotice = goal.related.length ? "已更新相关公司" : "没有找到匹配企业，可以换个关键词再试。";
-        state.busy = "";
-        render();
-        return;
-      }
       try {
         await loadGoalCompanies(state.activeGoalId, state.query);
         state.sidebarNotice = state.query ? "已更新相关公司" : "";
@@ -2184,28 +1692,6 @@
         state.sidebarNotice = "";
         state.notice = "";
         render();
-        if (DEMO_MODE) {
-          if (!goal.pool.includes(id)) goal.pool.push(id);
-          goal.related = goal.related.filter((itemId) => itemId !== id);
-        state.activeCompanyId = id;
-        state.mobileNavigationOpen = false;
-          if (isBydItem(companies[id])) {
-            companies[id].library = [];
-            companies[id].updates = [];
-            companies[id].status = "新商机";
-            companies[id].progress = "新加入目标企业，尚无历史资料。";
-            rememberCompanyQa(id, []);
-            state.selectedDossierId = "";
-            state.materialFilter = "全部";
-          }
-          state.query = "";
-          state.hasSearched = false;
-          state.notice = "已加入目标企业池";
-          goal.stats = goalStats(goal.pool.length);
-          state.busy = "";
-          render();
-          return;
-        }
         try {
           const detail = await api(`/sales-goals/${encodeURIComponent(goal.id)}/target-enterprises`, { method: "POST", body: { company_id: id } });
           const mapped = mapCompanyFromApi(detail);
@@ -2231,20 +1717,12 @@
         state.activeCompanyId = button.dataset.company;
         state.mobileNavigationOpen = false;
         state.materialFilter = "全部";
-        if (DEMO_MODE && isBydItem(company(state.activeCompanyId))) {
-          company(state.activeCompanyId).library = [];
-        }
         activateCompanyQa(state.activeCompanyId);
         state.selectedDossierId = company(state.activeCompanyId)?.updates?.[0]?.id || "";
         state.notice = "";
         state.sidebarNotice = "";
         state.busy = `company:${state.activeCompanyId}`;
         render();
-        if (DEMO_MODE) {
-          state.busy = "";
-          render();
-          return;
-        }
         try {
           await hydrateCompany(state.activeCompanyId);
         } catch {
@@ -2302,13 +1780,6 @@
       state.busy = "refresh";
       state.notice = "";
       render();
-      if (DEMO_MODE) {
-        refreshSafeCompany(current);
-        state.notice = "已获取最新档案";
-        state.busy = "";
-        render();
-        return;
-      }
       try {
         if (current?.id) {
           const created = await api(`/target-enterprises/${encodeURIComponent(current.id)}/dossiers`, {
@@ -2409,16 +1880,6 @@
       state.notice = "";
       render();
       scrollQaToBottom();
-      if (DEMO_MODE) {
-        const messages = [...qaMessagesForCompany(current)];
-        messages.push(answerSafeQuestion(current, question));
-        rememberCompanyQa(current.id, messages);
-        state.busy = "";
-        state.qaPendingCompanyId = "";
-        render();
-        scrollQaToBottom();
-        return;
-      }
       try {
         const result = await api(`/target-enterprises/${encodeURIComponent(current.id)}/qa`, { method: "POST", body: { question } });
         const resolvedMessages = (result.messages || []).map(mapQaMessage);
@@ -2444,12 +1905,6 @@
 
   async function boot() {
     const generation = ++bootGeneration;
-    if (DEMO_MODE) {
-      state.bootLoading = false;
-      state.bootError = "";
-      render();
-      return;
-    }
     if (recoveryAccessToken && state.authView === "update") {
       state.auth = {
         checked: true,
@@ -2505,7 +1960,7 @@
       wait(6000).then(() => {
         if (settled || generation !== bootGeneration) return;
         state.bootLoading = false;
-        state.bootError = "后端响应超时，请检查 API 服务和运行模式配置。";
+        state.bootError = "后端响应超时，请检查 API 服务和运行配置。";
         render();
       }),
     ]);

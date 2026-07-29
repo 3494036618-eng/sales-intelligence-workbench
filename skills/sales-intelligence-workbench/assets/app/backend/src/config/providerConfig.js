@@ -1,15 +1,13 @@
 import { existsSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import { createEnvReader } from "./runtimeEnv.js";
-import { createRuntimePolicy, publicRuntimePolicy } from "./runtimeMode.js";
+import { createRuntimePolicy, publicRuntimePolicy } from "./runtimePolicy.js";
 
 const DEFAULTS = {
   DATAPRO_MCP_URL: "https://datapro.hqd.cn-beijing.volces.com/mcp",
   WEB_SEARCH_BASE_URL: "https://open.feedcoopapi.com/search_api/web_search",
   OPENVIKING_AGENT_ID: "default",
   SUPABASE_REGION: "cn-beijing",
-  VISION_BASE_URL: "https://ark.cn-beijing.volces.com/api/plan/v3",
-  VISION_IMAGE_MODEL: "doubao-seedream-5.0-lite",
 };
 
 function unique(values) {
@@ -67,7 +65,7 @@ function provider(id, label, options) {
 export function getProviderStatus(options = {}) {
   const env = options.env || createEnvReader();
   const runtimePolicy = options.runtimePolicy || createRuntimePolicy({ env });
-  const repositoryMode = env.value("REPOSITORY_MODE") || "memory";
+  const repositoryMode = env.value("REPOSITORY_MODE") || "supabase";
 
   const webSearchRequired = [["WEB_SEARCH_API_KEY", "AGENT_PLAN_API_KEY", "ASK_ECHO_SEARCH_INFINITY_API_KEY"]];
   const dataProRequired = [["DATAPRO_API_KEY", "AGENT_PLAN_API_KEY"]];
@@ -82,17 +80,8 @@ export function getProviderStatus(options = {}) {
     && env.hasAny(["OPENVIKING_BASE_URL"]);
   const openVikingConfigured = openVikingHttpConfigured || openVikingConfigExists || openVikingCliExists;
   const modelRequired = [["ARK_API_KEY", "VOLCENGINE_ARK_API_KEY", "MODEL_API_KEY", "AGENT_PLAN_API_KEY"]];
-  const visionRequired = [["VISION_API_KEY", "MODEL_API_KEY", "AGENT_PLAN_API_KEY", "ARK_API_KEY"]];
 
   const providers = [
-    provider("fixture", "Fixture / Mock Provider", {
-      status: runtimePolicy.allow_fixture_data ? "ready" : "disabled",
-      mode: "mock",
-      role: "仅供显式 demo 模式使用的本地演示数据",
-      notes: runtimePolicy.allow_fixture_data
-        ? ["当前为 demo 模式，不调用外部服务。"]
-        : ["当前运行模式禁止使用演示数据。"],
-    }),
     provider("web_search", "联网搜索 Provider", {
       status: configStatus(env, webSearchRequired),
       mode: "real",
@@ -156,7 +145,7 @@ export function getProviderStatus(options = {}) {
       optional_env: ["OPENVIKING_CLI", "OPENVIKING_CLI_CONFIG", "OPENVIKING_AGENT_ID", "OPENVIKING_RUN_ENABLED", "OPENVIKING_SALES_ROOT_URI", "OPENVIKING_FIND_LIMIT", "OPENVIKING_TIMEOUT_MS"],
       configured_from: openVikingConfigured ? unique([...env.sources(["OPENVIKING_API_KEY", "OPENVIKING_BEARER_TOKEN", "OPENVIKING_BASE_URL", "OPENVIKING_CLI", "OPENVIKING_CLI_CONFIG", "OPENVIKING_AGENT_ID", "OPENVIKING_RUN_ENABLED", "OPENVIKING_SALES_ROOT_URI", "OPENVIKING_FIND_LIMIT", "OPENVIKING_TIMEOUT_MS"]), openVikingConfigExists ? "local_openviking_cli_config" : null, openVikingCliExists ? "local_openviking_cli" : null].filter(Boolean)) : [],
       missing: openVikingConfigured ? [] : ["OpenViking CLI 配置，或 OPENVIKING_BASE_URL + OPENVIKING_API_KEY"],
-      notes: ["Agent Plan Harness 控制 AFP 抵扣，OpenViking 数据面仍使用 OpenViking API Key 认证。", "状态接口不写入资料或会话。", "OpenViking 不承担企业、档案、任务和权限数据库角色。", "飞书正文与资料问答记忆写入由 OPENVIKING_RUN_ENABLED 控制。"],
+      notes: ["Agent Plan 套餐控制 AFP 抵扣，Agent 记忆（OpenViking）数据面仍使用内部访问凭证认证。", "状态接口不写入资料或会话。", "OpenViking 不承担企业、档案、任务和权限数据库角色。", "飞书正文与资料问答记忆写入由 OPENVIKING_RUN_ENABLED 控制。"],
       safe_config: {
         cli_path: openVikingCliPath,
         agent_id: env.value("OPENVIKING_AGENT_ID") || DEFAULTS.OPENVIKING_AGENT_ID,
@@ -183,22 +172,6 @@ export function getProviderStatus(options = {}) {
         timeout_ms: env.number("MODEL_TIMEOUT_MS", 90000),
       },
     }),
-    provider("vision", "Vision Image Provider", {
-      status: configStatus(env, visionRequired),
-      mode: "real",
-      role: "生成竞争变化视觉简报图、证据墙和报告封面图",
-      required_env: ["AGENT_PLAN_API_KEY（VISION_API_KEY 可作为高级覆盖）"],
-      optional_env: ["VISION_BASE_URL", "VISION_IMAGE_MODEL", "VISION_RUN_ENABLED", "VISION_TIMEOUT_MS", "VISION_IMAGE_SIZE"],
-      configured_from: env.sources(["VISION_API_KEY", "MODEL_API_KEY", "AGENT_PLAN_API_KEY", "ARK_API_KEY", "VISION_BASE_URL", "VISION_IMAGE_MODEL", "VISION_RUN_ENABLED", "VISION_TIMEOUT_MS", "VISION_IMAGE_SIZE"]),
-      missing: missingGroups(env, visionRequired),
-      notes: ["状态接口只检查配置，不生成图片。", "图片生成由用户点击触发，失败不自动重试。"],
-      safe_config: {
-        model_name: env.value("VISION_IMAGE_MODEL") || DEFAULTS.VISION_IMAGE_MODEL,
-        base_url: env.value("VISION_BASE_URL") || DEFAULTS.VISION_BASE_URL,
-        run_enabled: ["1", "true", "yes", "on"].includes(String(env.value("VISION_RUN_ENABLED", "false")).toLowerCase()),
-        image_size: env.value("VISION_IMAGE_SIZE") || "1920x1920",
-      },
-    }),
   ];
 
   return {
@@ -210,16 +183,9 @@ export function getProviderStatus(options = {}) {
     },
     repository: {
       active: repositoryMode,
-      status: repositoryMode === "supabase" ? configStatus(env, supabaseRequired) : "ready",
-      available_modes: ["memory", "supabase"],
-      notes: repositoryMode === "memory" ? ["当前仍使用内存仓库；可通过 REPOSITORY_MODE=supabase 切到 Supabase。"] : ["当前使用 Supabase Data API Repository，业务状态会按 workspace 读取并写回。"],
+      status: configStatus(env, supabaseRequired),
+      notes: ["使用 Supabase Data API Repository，业务状态按 Workspace 读取并写回。"],
     },
     providers,
-    next_recommended_tasks: [
-      "用浏览器完成一次前端演示验收",
-      "继续监控 Supabase Data API 延迟并按业务查询增加分页",
-      "将视觉图片保存到 Supabase Storage",
-      "继续优化报告 / 问答 / 视觉图的模型提示词和引用校验",
-    ],
   };
 }

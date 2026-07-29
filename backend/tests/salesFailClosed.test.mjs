@@ -2,25 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { SalesService } from "../src/services/salesService.js";
 
-const productionPolicy = Object.freeze({
-  mode: "production",
+const strictRuntimePolicy = Object.freeze({
   fail_closed: true,
-  allow_fixture_data: false,
-  allow_provider_fallback: false,
 });
 
-const developmentPolicy = Object.freeze({
-  mode: "development",
+const permissiveTestPolicy = Object.freeze({
   fail_closed: false,
-  allow_fixture_data: false,
-  allow_provider_fallback: false,
-});
-
-const demoPolicy = Object.freeze({
-  mode: "demo",
-  fail_closed: false,
-  allow_fixture_data: true,
-  allow_provider_fallback: true,
 });
 
 function envReader(values = {}) {
@@ -45,37 +32,37 @@ function unavailableProviders() {
   };
 }
 
-test("development ignores legacy SALES demo switches", () => {
+test("the runtime starts with no business data", () => {
   const service = new SalesService({
-    env: envReader({
-      SALES_DEMO_STABLE_MODE: "true",
-      SALES_PROFESSIONAL_DEMO_FALLBACK: "true",
-      SALES_SKIP_REAL_DATAPRO: "true",
-    }),
-    runtimePolicy: developmentPolicy,
+    env: envReader(),
+    runtimePolicy: permissiveTestPolicy,
   });
 
-  assert.equal(service.salesDemoStableMode, false);
-  assert.equal(service.salesProfessionalFallback, false);
-  assert.equal(service.salesSkipRealDataPro, false);
   assert.deepEqual(service.data.goals, []);
   assert.deepEqual(service.data.companies, {});
 });
 
-test("demo is the only default mode that loads sales fixtures", () => {
+test("test data is loaded only when a test explicitly injects a seed", () => {
+  const seed = {
+    goals: [{ id: "goal-1", name: "Test goal" }],
+    companies: {},
+    dossiers: {},
+    materials: {},
+    qa_messages: {},
+  };
   const service = new SalesService({
     env: envReader(),
-    runtimePolicy: demoPolicy,
+    runtimePolicy: permissiveTestPolicy,
+    seed,
   });
 
-  assert.ok(service.data.goals.length > 0);
-  assert.ok(service.data.companies.xinlan_auto);
+  assert.deepEqual(service.data.goals, seed.goals);
 });
 
-test("an empty production repository replaces any in-memory seed", async () => {
+test("an empty persistent repository replaces injected test data", async () => {
   const service = new SalesService({
     env: envReader(),
-    runtimePolicy: productionPolicy,
+    runtimePolicy: strictRuntimePolicy,
     seed: {
       goals: [{ id: "seed-goal", name: "Seed" }],
       companies: { seed: { id: "seed", name: "Seed Company" } },
@@ -102,10 +89,10 @@ test("an empty production repository replaces any in-memory seed", async () => {
   assert.equal(service.persistence.enabled, true);
 });
 
-test("production refuses to continue when verified professional evidence is unavailable", async () => {
+test("the runtime refuses to continue when verified professional evidence is unavailable", async () => {
   const service = new SalesService({
     env: envReader(),
-    runtimePolicy: productionPolicy,
+    runtimePolicy: strictRuntimePolicy,
     ...unavailableProviders(),
   });
 
@@ -115,10 +102,10 @@ test("production refuses to continue when verified professional evidence is unav
   );
 });
 
-test("production preserves retryability when public evidence has a transient provider failure", async () => {
+test("the runtime preserves retryability when public evidence has a transient provider failure", async () => {
   const service = new SalesService({
     env: envReader(),
-    runtimePolicy: productionPolicy,
+    runtimePolicy: strictRuntimePolicy,
     dataProProvider: {
       maxSources: 1,
       isRunEnabled: () => true,
@@ -153,10 +140,10 @@ test("production preserves retryability when public evidence has a transient pro
   );
 });
 
-test("development returns issues without inventing professional evidence", async () => {
+test("a unit-test policy can inspect issues without inventing professional evidence", async () => {
   const service = new SalesService({
     env: envReader(),
-    runtimePolicy: developmentPolicy,
+    runtimePolicy: permissiveTestPolicy,
     ...unavailableProviders(),
   });
 
@@ -166,10 +153,10 @@ test("development returns issues without inventing professional evidence", async
   assert.ok(evidence.issues.length >= 2);
 });
 
-test("production refuses rule-based dossier fallback when the model is disabled", async () => {
+test("the runtime refuses rule-based dossier fallback when the model is disabled", async () => {
   const service = new SalesService({
     env: envReader(),
-    runtimePolicy: productionPolicy,
+    runtimePolicy: strictRuntimePolicy,
     modelProvider: { isRunEnabled: () => false },
   });
 
@@ -183,10 +170,10 @@ test("production refuses rule-based dossier fallback when the model is disabled"
   );
 });
 
-test("production business access requires a working persistent repository", async () => {
+test("business access requires a working persistent repository", async () => {
   const service = new SalesService({
     env: envReader(),
-    runtimePolicy: productionPolicy,
+    runtimePolicy: strictRuntimePolicy,
   });
 
   await assert.rejects(

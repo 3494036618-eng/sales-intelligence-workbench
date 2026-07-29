@@ -6,14 +6,14 @@ Use Node.js 20 or newer. The backend currently has no third-party runtime depend
 
 ```bash
 node --check frontend/app.js
-node --check frontend/services.js
+node --check frontend/text-format.js
 cd backend
 npm test
 ```
 
 ## Change rules
 
-- Keep `production` fail closed; never add realistic fixture fallback to a real Provider path.
+- Keep the runtime fail closed; never add realistic test-data fallback to a real Provider path.
 - Keep model output evidence-bound and validate citation IDs on the backend.
 - Never commit API keys, Service Role Keys, Feishu content, customer data, backups, logs, videos, or screenshots from real accounts.
 - Add focused tests for Provider contracts, persistence, workspace isolation and frontend runtime wiring.

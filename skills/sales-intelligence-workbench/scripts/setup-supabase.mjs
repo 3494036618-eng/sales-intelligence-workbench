@@ -205,7 +205,7 @@ const workspace = parseJson(runCli(command, [
   "-o", "json",
 ], environment), "Supabase projects list");
 if (!workspace?.is_agent_plan && !workspace?.is_agent_plan_instance) {
-  throw new Error("目标 Supabase Workspace 不是 Agent Plan 实例。请使用 --is-agent-plan 创建新 Workspace，不要把普通按量实例当作 Harness。");
+  throw new Error("目标不是 AI Native 应用开发底座（Supabase）的 Agent Plan Workspace。请使用 --is-agent-plan 创建新 Workspace，不要使用普通按量实例。");
 }
 if (String(workspace.status || "").toLowerCase() !== "running") {
   throw new Error(`目标 Agent Plan Supabase Workspace 当前状态为 ${workspace.status || "unknown"}，请先恢复为 Running。`);
@@ -235,7 +235,6 @@ const key = serviceRoleKey(keys);
 if (!apiOrigin) throw new Error("目标 Workspace 未返回可用的 Data API 域名。");
 if (!key) throw new Error("目标 Workspace 未返回 Service Role Key。");
 
-const mode = configuration.APP_MODE === "development" ? "development" : "production";
 writeConfiguration({
   ...configuration,
   SUPABASE_CLI_PROFILE: profile,
@@ -244,7 +243,7 @@ writeConfiguration({
   SUPABASE_API_URL: apiOrigin,
   SUPABASE_SERVICE_ROLE_KEY: key,
   SUPABASE_RUN_ENABLED: "true",
-}, { mode });
+});
 
 const refreshedEnvironment = runtimeEnvironment();
 run(process.execPath, [path.join(paths.installedApp, "backend", "scripts", "migrate-supabase.mjs"), "--apply"], {

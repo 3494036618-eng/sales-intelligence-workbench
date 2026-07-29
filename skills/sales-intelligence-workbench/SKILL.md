@@ -1,20 +1,20 @@
 ---
 name: sales-intelligence-workbench
-description: 从 0 到 1 搭建、配置、验收和维护真实数据驱动的销售团队工作台，覆盖需求澄清、Agent Plan 模型与 Harness、Supabase 业务数据库、OpenViking 长期记忆、Codex CLI 调度飞书 CLI 导入资料，以及企业搜索、档案和资料问答闭环。用户要求搭建销售工作台、部署或继续开发该项目、导入销售资料、排查 Provider、迁移数据库、备份恢复或验收真实业务链路时使用。
+description: 从 0 到 1 搭建、配置、验收和维护真实数据驱动的销售团队工作台，覆盖需求澄清、Agent Plan 模型、专业数据集（DataPro）、豆包搜索（联网搜索）、AI Native 应用开发底座（Supabase）、Agent 记忆（OpenViking）、Codex CLI 调度飞书 CLI 导入资料，以及企业搜索、档案和资料问答闭环。用户要求搭建销售工作台、部署或继续开发该项目、导入销售资料、排查 Provider、迁移数据库、备份恢复或验收真实业务链路时使用。
 ---
 
 # 销售团队工作台 Builder
 
-这是一个 Builder Skill：先理解用户的销售目标，再安装经过测试的完整前后端模板，连接用户自己的 Agent Plan、Supabase、OpenViking 和资料来源，最后用真实业务闭环验收。不得用演示企业、固定报告、Mock Provider 或静态来源冒充真实链路。
+这是一个 Builder Skill：先理解用户的销售目标，再安装经过测试的完整前后端模板，连接用户自己的 Agent Plan、AI Native 应用开发底座（Supabase）、Agent 记忆（OpenViking）和资料来源，最后用真实业务闭环验收。不得用演示企业、固定报告、Mock Provider 或静态来源冒充真实链路。
 
 ## 远程 Skill 入口
 
 用户可能在 Codex 或 Claude Code 中直接通过公开的主 Skill URL 触发本流程，而不是预先克隆
-仓库、安装 Skill 或准备本机配置。两端使用同一份 Skill 和同一套业务逻辑。正式口令采用以下
-形式，并固定到不可变的 release tag 或 commit：
+仓库、安装 Skill 或准备本机配置。两端使用同一份 Skill 和同一套业务逻辑。独立发行仓库
+使用以下版本化入口；其他发行位置也必须固定到已发布的 tag 或经过审核的 commit SHA：
 
 ```text
-帮我初始化销售助手：https://github.com/<owner>/<repo>/blob/<ref>/skills/sales-intelligence-workbench/SKILL.md
+帮我初始化销售助手：https://github.com/3494036618-eng/sales-intelligence-workbench/blob/v0.9.1/skills/sales-intelligence-workbench/SKILL.md
 ```
 
 如果当前环境中不存在 `{baseDir}/scripts/status.mjs`，说明本 Skill 是从远程 URL 打开的。
@@ -35,19 +35,34 @@ description: 从 0 到 1 搭建、配置、验收和维护真实数据驱动的�
    提供源码目录。后续重新打开时，Codex 使用 `$sales-intelligence-workbench`，Claude Code
    使用 `/sales-intelligence-workbench`。
 5. 已有同名目录时先核对 Git remote、版本和工作区状态；不覆盖用户改动，不创建第二套
-   运行时。下载、校验和安装阶段不创建云资源、不调用模型或 Harness、不产生 AFP。
+   运行时。下载、校验和安装阶段不创建云资源、不调用 Agent Plan 外部能力、不产生 AFP。
 
 “什么也没配置”表示用户不需要预先准备本地项目、依赖或配置文件，不代表可以绕过云服务
-账号、Agent Plan 套餐、Supabase/OpenViking 权限、飞书登录或真实调用费用。用户侧只输入
+账号、Agent Plan 套餐、AI Native 应用开发底座（Supabase）/Agent 记忆（OpenViking）权限、飞书登录或真实调用费用。用户侧只输入
 一枚 Agent Plan Key；OpenViking 记忆库的内部访问凭证由初始化脚本自动获取和私密保存，
 不得要求用户查找、粘贴或管理第二个 Key。
+
+## Agent Plan 控制台名称约定
+
+面向用户的引导必须优先使用 Agent Plan 控制台能力卡片中的名称，并在首次出现时补充
+内部技术名或作用说明：
+
+- `专业数据集（DataPro）`
+- `豆包搜索（联网搜索）`
+- `Agent 记忆（OpenViking）`
+- `AI Native 应用开发底座（Supabase）`
+
+引导用户在对应卡片确认“开启抵扣”，首次使用时按“配置使用”完成授权。不要只写
+`DataPro`、`OpenViking`、`Supabase`、“联网搜索”“记忆库”或“业务数据库”而省略控制台
+名称，否则用户无法判断应开启哪张能力卡片。Agent Plan 模型单独说明，不把它误写成上述
+能力卡片。
 
 ## 执行原则
 
 - 每完成一步，说明刚做了什么、为什么做、当前阶段、下一步和是否产生外部调用或费用。
 - 密钥只通过隐藏终端输入、现有私密环境文件或部署平台 Secret 配置；不要要求用户把密钥发到聊天。
-- 先做配置检查，再经用户知情执行 `--live`；真实 doctor 会产生少量模型、DataPro 和联网搜索用量。
-- production 必须 fail closed。配置缺失时不启动；单个上游临时故障时允许工作台启动，但依赖该 Provider 的业务操作必须失败并报告原因，不生成假结果。
+- 先做配置检查，再经用户知情执行 `--live`；真实 doctor 会产生少量 Agent Plan 模型、专业数据集（DataPro）和豆包搜索（联网搜索）用量。
+- 工作台必须 fail closed。配置缺失时不启动；单个上游临时故障时允许工作台启动，但依赖该 Provider 的业务操作必须失败并报告原因，不生成假结果。
 - 数据库迁移、恢复、删除和真实业务写入前明确影响；恢复只对独立目标执行。
 - 读取 `references/evidence-policy.md` 后再修改事实、引用、档案或问答链路。
 
@@ -90,7 +105,7 @@ node {baseDir}/scripts/onboard.mjs
 node {baseDir}/scripts/setup.mjs
 ```
 
-Builder 按“业务范围 → 应用 → Agent Plan/Harness → Supabase → OpenViking → 飞书资料 → 真实诊断 → API/Worker → 首批导入 → 业务验收”推进。所有阶段通过前，不要宣称工作台已经可直接使用。
+Builder 按“业务范围 → 应用 → Agent Plan 模型与能力卡片 → AI Native 应用开发底座（Supabase）→ Agent 记忆（OpenViking）→ 飞书资料 → 真实诊断 → API/Worker → 首批导入 → 业务验收”推进。所有阶段通过前，不要宣称工作台已经可直接使用。
 
 需要查看进程、地址和 Provider 配置细节时再运行：
 
@@ -125,14 +140,14 @@ node {baseDir}/scripts/configure.mjs
 已有私密 `.env.local` 时可迁移，不修改源文件，也不显示值：
 
 ```bash
-node {baseDir}/scripts/configure.mjs --from-env-file /绝对路径/.env.local --mode production
+node {baseDir}/scripts/configure.mjs --from-env-file /绝对路径/.env.local
 ```
 
-首次联调可用 `--mode development`；对外运行使用 `production`。不得通过该 Skill 配置 `demo`。Provider 与 Key 的对应关系见 `references/provider-configuration.md`。
+工作台不提供运行方式选择，始终连接真实 Provider 和 Supabase。Provider 与 Key 的对应关系见 `references/provider-configuration.md`。
 
 ## 4. 初始化数据库
 
-目标必须是北京地域的 Agent Plan Supabase Workspace，不能把普通按量 Workspace 当作 Harness。优先使用显式 profile：
+目标必须是北京地域的 AI Native 应用开发底座（Supabase）Agent Plan Workspace，不能使用普通按量 Workspace。优先使用显式 profile：
 
 ```bash
 byted-supabase-cli login --profile agent-plan --region cn-beijing --is-agent-plan
@@ -213,7 +228,7 @@ node {baseDir}/scripts/doctor.mjs
 node {baseDir}/scripts/doctor.mjs --live
 ```
 
-排障时可用 `--only-provider model|datapro|web_search|openviking|supabase` 单独复测；单项结果不能生成 production 启动凭证。
+排障时可用 `--only-provider model|datapro|web_search|openviking|supabase` 单独复测；单项结果不能代替全量启动验收。
 
 首次正式使用前建议完成全量真实诊断；诊断失败会保留 Provider 级故障证据，但不会阻止其他独立能力启动。随后启动：
 
@@ -226,7 +241,7 @@ node {baseDir}/scripts/status.mjs
 
 当前 Beta 是单工作区、单人使用，以及本机或受控内网自托管模式，不提供成员邀请、角色管理、公网生产 SaaS 或 SLA。密码恢复依赖 Supabase Auth 邮件服务；如未来开放公网，必须配置 `AUTH_REDIRECT_URL`、Auth Redirect URLs 允许列表和自有 SMTP，具体要求见 `references/provider-configuration.md`。
 
-后端和前端由同一进程、同一地址提供；不要另开静态 Demo。停止不会删除配置和数据：
+后端和前端由同一进程、同一地址提供；不要另开静态前端。停止不会删除配置和数据：
 
 ```bash
 node {baseDir}/scripts/stop.mjs
@@ -281,7 +296,7 @@ node {baseDir}/scripts/verify-business-chain.mjs \
 该命令会产生 AFP/Token，并保留 Supabase 中的企业/档案/任务记录及 OpenViking 中的问答 Session，不会自动删除。完整产品验收还必须补充：飞书增量导入、从 OpenViking 重启恢复正文与问答、再次生成后的版本比较、备份恢复和浏览器端操作。任一步使用固定前端数据都不通过。
 验收通过后，Builder 保存不含档案正文、问题答案和密钥的脱敏回执，供 `setup.mjs` 判断搭建是否完成。
 
-应用队列迁移后，在不调用模型或 Harness 的情况下验证数据库原子语义：
+应用队列迁移后，在不调用 Agent Plan 外部能力的情况下验证数据库原子语义：
 
 ```bash
 node {baseDir}/scripts/smoke-paid-workflow.mjs

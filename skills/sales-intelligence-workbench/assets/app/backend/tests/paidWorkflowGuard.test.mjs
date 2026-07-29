@@ -25,7 +25,7 @@ function job(id, type = "sales_dossier_generation") {
   };
 }
 
-test("paid workflow limits use safe production-oriented defaults", () => {
+test("paid workflow limits use safe strict-runtime defaults", () => {
   assert.deepEqual(paidWorkflowLimits(envReader()), {
     max_concurrent: 2,
     daily_limit: 100,
@@ -77,7 +77,7 @@ test("local guard counts every paid attempt against the daily limit", async () =
   assert.equal(snapshot.by_job_type.sales_company_search, 1);
 });
 
-test("production delegates reservation and completion to persistent repository RPCs", async () => {
+test("runtime delegates reservation and completion to persistent repository RPCs", async () => {
   const calls = [];
   const repository = {
     async reservePaidWorkflow(candidate, reservationId, limits) {
@@ -104,7 +104,7 @@ test("production delegates reservation and completion to persistent repository R
   assert.equal(snapshot.by_job_type.sales_qa, 1);
 });
 
-test("production fails closed when the persistent reservation capability is missing", async () => {
+test("runtime fails closed when the persistent reservation capability is missing", async () => {
   const guard = new PaidWorkflowGuard({ env: envReader(), repository: {}, failClosed: true });
   await assert.rejects(
     () => guard.reserve(job("job-prod")),

@@ -12,16 +12,9 @@ function envReader(values = {}) {
   };
 }
 
-const demoPolicy = Object.freeze({
-  mode: "demo",
-  fail_closed: false,
-  allow_fixture_data: true,
-  allow_provider_fallback: true,
-});
-
 test("provider run records redact secrets and retain safe usage metadata", async () => {
   const store = new ProviderRunStore();
-  const run = await store.startRun({ operation: "test", app_mode: "development" });
+  const run = await store.startRun({ operation: "test" });
 
   await store.executeStep(run.id, {
     provider: "model",
@@ -41,13 +34,14 @@ test("provider run records redact secrets and retain safe usage metadata", async
   assert.match(saved.steps[0].input_summary, /\[REDACTED\]/);
   assert.equal(saved.steps[0].usage.total_tokens, 15);
   assert.equal(saved.steps[0].raw_ref, "model:request-1");
+  assert.equal(saved.app_mode, "production");
 });
 
 test("sales service provider run APIs expose diagnostics without internal references", async () => {
   const store = new ProviderRunStore();
   const service = new SalesService({
     env: envReader(),
-    runtimePolicy: demoPolicy,
+    runtimePolicy: { fail_closed: false },
     providerRunStore: store,
   });
   const run = await store.startRun({
@@ -75,6 +69,7 @@ test("sales service provider run APIs expose diagnostics without internal refere
     assert.equal(publicRun.steps[0].provider, "model");
     assert.equal(publicRun.steps[0].usage.total_tokens, 15);
     assert.equal(Object.hasOwn(publicRun, "result_ref"), false);
+    assert.equal(Object.hasOwn(publicRun, "app_mode"), false);
     assert.equal(Object.hasOwn(publicRun.steps[0], "request_id"), false);
     assert.equal(Object.hasOwn(publicRun.steps[0], "raw_ref"), false);
   }
@@ -182,40 +177,4 @@ test("cancelling a provider run also closes its running step", async () => {
   assert.ok(cancelled.finished_at);
   assert.equal(cancelled.steps[0].status, "cancelled");
   assert.equal(cancelled.steps[0].output_summary, "User cancelled the task.");
-});
-
-test("every demo dossier generation exposes a complete provider run", async () => {
-  const unexpectedRealCall = () => {
-    throw new Error("demo mode must not call a real dependency");
-  };
-  const service = new SalesService({
-    env: envReader(),
-    runtimePolicy: demoPolicy,
-    dataProProvider: { isRunEnabled: () => true, callTool: unexpectedRealCall },
-    webSearchProvider: { isRunEnabled: () => true, search: unexpectedRealCall },
-    modelProvider: { isRunEnabled: () => true, callJson: unexpectedRealCall },
-    openVikingProvider: { isRunEnabled: () => true, storeMemory: unexpectedRealCall },
-    repository: {
-      getSalesState: unexpectedRealCall,
-      persistSalesDossier: unexpectedRealCall,
-    },
-  });
-  const companyId = service.data.goals[0].company_ids[0];
-
-  const candidates = await service.searchCompanies(service.data.goals[0].id, { query: "智能驾驶 杭州" });
-  assert.ok(candidates.length > 0);
-
-  const result = await service.createDossier(companyId);
-  const run = await service.getProviderRun(result.provider_run_id);
-  const providers = run.steps.map((step) => step.provider);
-
-  assert.equal(run.operation, "sales_dossier_generation");
-  assert.equal(run.entity_id, companyId);
-  assert.equal(run.status, "succeeded");
-  assert.ok(providers.includes("fixture"));
-  assert.ok(providers.includes("model"));
-  assert.ok(providers.includes("rule"));
-  assert.ok(providers.includes("openviking"));
-  assert.ok(providers.includes("supabase"));
-  assert.equal((await service.listProviderRuns({ entity_id: companyId })).length, 1);
 });

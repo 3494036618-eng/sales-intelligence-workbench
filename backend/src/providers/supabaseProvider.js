@@ -9,8 +9,6 @@ import { providerFailure, providerSuccess } from "./providerResult.js";
 
 const execFileAsync = promisify(execFile);
 
-const SNAPSHOT_TABLE = "public.ccc_demo_run_snapshots";
-
 function truthy(value) {
   return ["1", "true", "yes", "on"].includes(String(value || "").toLowerCase());
 }
@@ -44,15 +42,6 @@ function isReadOnlySql(query) {
   return /^(select|with|show|explain)\b/.test(normalized);
 }
 
-function sqlString(value) {
-  if (value === null || value === undefined) return "null";
-  return `'${String(value).replace(/'/g, "''")}'`;
-}
-
-function sqlJson(value) {
-  return `${sqlString(JSON.stringify(value))}::jsonb`;
-}
-
 export class SupabaseProvider {
   constructor(options = {}) {
     this.env = options.env || createEnvReader();
@@ -62,7 +51,6 @@ export class SupabaseProvider {
     this.workspaceId = this.env.value("SUPABASE_WORKSPACE_ID") || this.env.value("DEFAULT_WORKSPACE_ID");
     this.branchId = this.env.value("SUPABASE_BRANCH_ID");
     this.readOnly = truthy(this.env.value("SUPABASE_READ_ONLY", "true"));
-    this.tableEnsured = false;
   }
 
   isConfigured() {
@@ -209,73 +197,6 @@ export class SupabaseProvider {
     });
   }
 
-  async ensureSnapshotTable() {
-    if (this.tableEnsured) return providerSuccess("supabase", { skipped: true });
-    const result = await this.executeSql(`
-      create table if not exists ${SNAPSHOT_TABLE} (
-        id text primary key,
-        scope_id text not null,
-        object_id text not null,
-        status text not null,
-        provider text,
-        provider_mode text,
-        card_count integer not null default 0,
-        trace_count integer not null default 0,
-        run_json jsonb not null,
-        created_at timestamptz not null default now(),
-        synced_at timestamptz not null default now()
-      );
-    `);
-    if (result.ok) this.tableEnsured = true;
-    return result;
-  }
-
-  async syncRunSnapshot(run) {
-    if (!this.isRunEnabled()) {
-      return providerFailure("supabase", { code: "disabled", message: "SUPABASE_RUN_ENABLED is false." }, { skipped: true });
-    }
-
-    const ensure = await this.ensureSnapshotTable();
-    if (!ensure.ok) return ensure;
-
-    const traceCount = Array.isArray(run.traces) ? run.traces.length : 0;
-    const cardCount = Array.isArray(run.cards) ? run.cards.length : 0;
-    const query = `
-      insert into ${SNAPSHOT_TABLE} (
-        id, scope_id, object_id, status, provider, provider_mode, card_count, trace_count, run_json, synced_at
-      )
-      values (
-        ${sqlString(run.id)},
-        ${sqlString(run.scope_id)},
-        ${sqlString(run.object_id)},
-        ${sqlString(run.status)},
-        ${sqlString(run.provider)},
-        ${sqlString(run.provider_mode)},
-        ${cardCount},
-        ${traceCount},
-        ${sqlJson(run)},
-        now()
-      )
-      on conflict (id) do update set
-        scope_id = excluded.scope_id,
-        object_id = excluded.object_id,
-        status = excluded.status,
-        provider = excluded.provider,
-        provider_mode = excluded.provider_mode,
-        card_count = excluded.card_count,
-        trace_count = excluded.trace_count,
-        run_json = excluded.run_json,
-        synced_at = now()
-      returning id, scope_id, object_id, provider_mode, card_count, trace_count, synced_at;
-    `;
-    const result = await this.executeSql(query);
-    if (!result.ok) return result;
-    return providerSuccess("supabase", {
-      rows: result.rows,
-      raw_ref: `supabase:${SNAPSHOT_TABLE}:${run.id}`,
-      latency_ms: result.latency_ms,
-    });
-  }
 }
 
 export function createSupabaseProvider(options = {}) {

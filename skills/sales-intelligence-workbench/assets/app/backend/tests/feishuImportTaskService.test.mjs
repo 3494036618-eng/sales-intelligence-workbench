@@ -54,7 +54,6 @@ test("controlled Feishu import runs through local adapters and exposes only publ
   let receivedOptions = null;
   const service = new FeishuImportTaskService({
     env: envReader({ FEISHU_CLI_IMPORT_ENABLED: "true" }),
-    runtimePolicy: { mode: "production", is_demo: false },
     salesService,
     async runner(options) {
       receivedOptions = options;
@@ -108,7 +107,6 @@ test("conversation targets are bounded and only one import can run per company",
   });
   const service = new FeishuImportTaskService({
     env: envReader({ FEISHU_CLI_IMPORT_ENABLED: "true" }),
-    runtimePolicy: { mode: "development", is_demo: false },
     salesService: salesServiceFake(),
     async runner(options) {
       await runnerWait;
@@ -143,7 +141,6 @@ test("conversation targets are bounded and only one import can run per company",
 test("product import accepts names and chat IDs but rejects Open ID and bare document tokens", () => {
   const service = new FeishuImportTaskService({
     env: envReader({ FEISHU_CLI_IMPORT_ENABLED: "true" }),
-    runtimePolicy: { mode: "production", is_demo: false },
     salesService: salesServiceFake(),
   });
 
@@ -187,7 +184,6 @@ test("product import accepts names and chat IDs but rejects Open ID and bare doc
 test("legacy Feishu sync configuration keeps the controlled import available after upgrade", () => {
   const service = new FeishuImportTaskService({
     env: envReader({ FEISHU_SYNC_ENABLED: "true" }),
-    runtimePolicy: { mode: "production", is_demo: false },
     salesService: {
       requireCompany() {
         return { id: "company-1" };

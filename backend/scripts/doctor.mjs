@@ -1,6 +1,6 @@
 import { getProviderStatus } from "../src/config/providerConfig.js";
 import { createEnvReader } from "../src/config/runtimeEnv.js";
-import { createRuntimePolicy, publicRuntimePolicy } from "../src/config/runtimeMode.js";
+import { createRuntimePolicy, publicRuntimePolicy } from "../src/config/runtimePolicy.js";
 
 const env = createEnvReader();
 const runtimePolicy = createRuntimePolicy({ env });
@@ -11,29 +11,18 @@ const providers = Object.fromEntries(providerStatus.providers.map((provider) => 
   run_enabled: provider.safe_config?.run_enabled ?? null,
   missing: provider.missing,
 } ]));
-const warnings = [];
-
-if (runtimePolicy.mode === "development" && runtimePolicy.repository_mode === "memory") {
-  warnings.push("Development is using an in-memory repository; data will be lost when the backend restarts.");
-}
-if (runtimePolicy.mode !== "production") {
-  warnings.push("This check validates the current mode only; it does not mark the application production-ready.");
-}
-
-const productionProviderBlockers = runtimePolicy.is_production
-  ? requiredProviders.filter((id) => providers[id]?.status !== "configured")
-  : [];
-const ok = runtimePolicy.ready && productionProviderBlockers.length === 0;
+const providerBlockers = requiredProviders.filter((id) => providers[id]?.status !== "configured");
+const ok = runtimePolicy.ready && providerBlockers.length === 0;
 
 console.log(JSON.stringify({
   checked_at: new Date().toISOString(),
   ok,
   runtime: publicRuntimePolicy(runtimePolicy),
   providers,
-  warnings,
+  warnings: [],
   blockers: [
     ...runtimePolicy.blockers,
-    ...productionProviderBlockers.map((id) => `${id} is not configured`),
+    ...providerBlockers.map((id) => `${id} is not configured`),
   ],
   live_check_command: "npm run doctor:live",
 }, null, 2));

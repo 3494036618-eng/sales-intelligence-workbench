@@ -3,7 +3,6 @@ import { createApp } from "../src/app.js";
 import { createEnvReader } from "../src/config/runtimeEnv.js";
 import { createSupabaseProvider } from "../src/providers/supabaseProvider.js";
 
-process.env.APP_MODE = "production";
 process.env.REPOSITORY_MODE = "supabase";
 
 const env = createEnvReader();
@@ -67,7 +66,6 @@ try {
   const firstPort = await listen(firstServer);
   const firstBaseUrl = `http://127.0.0.1:${firstPort}`;
   const health = await request(firstBaseUrl, "GET", "/api/health");
-  assertOk(health.data?.app_mode === "production", "first app instance is not in production mode");
   assertOk(health.data?.runtime_ready === true, "first app instance is not runtime-ready");
 
   const created = await request(firstBaseUrl, "POST", "/api/sales-goals", {
@@ -100,7 +98,7 @@ try {
     ok: true,
     test_run: suffix,
     verified: {
-      production_fail_closed_path: true,
+      fail_closed_path: true,
       http_create_and_read: true,
       fresh_app_instance_reload: true,
       direct_database_record: true,

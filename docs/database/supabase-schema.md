@@ -84,19 +84,22 @@ supabase/migrations/
 
 迁移器会读取远端 `schema_migrations`，只执行未应用文件；任何已应用迁移都不应被就地改写，应新增后续修正迁移。
 
-生产运行前必须把迁移应用到 `202607280002`。后端在 production 中找不到该迁移时会返回 `503`，不会绕过内部表安全边界或重新启用 Supabase 问答正文兼容路径。
+运行前必须把迁移应用到 `202607280002`。后端找不到该迁移时会返回 `503`，不会绕过内部表安全边界或重新启用 Supabase 问答正文兼容路径。
 
-应用迁移后可执行 `smoke-paid-workflow.mjs`。该检查会在数据库事务中调用预约和释放 RPC，验证 Job/预约状态后回滚，不留下测试记录，也不调用模型或 Harness。
+应用迁移后可执行 `smoke-paid-workflow.mjs`。该检查会在数据库事务中调用预约和释放 RPC，
+验证 Job/预约状态后回滚，不留下测试记录，也不调用 Agent Plan 外部能力。
 
 再执行 `smoke-async-job-queue.mjs`，在事务内验证入队、领取、心跳、预约前安全重排、付费预约、完成释放，以及“请求取消时不提前释放、Worker 确认后释放”；检查结束同样回滚且 Provider 调用数为零。
 
 ## 备份与恢复
 
-当前账号缺少 `DescribeDBAccountConnection`，不能依赖 `db dump`。项目采用“版本化迁移 + Data API JSON 数据包”方案：
+项目的标准备份与恢复流程不依赖数据库直连权限或 `db dump`，统一采用“版本化迁移 +
+Data API JSON 数据包”方案：
 
 - `npm run db:backup` 导出工作区数据、已应用迁移、行数和 SHA-256。
 - `npm run db:restore -- --backup-dir <path>` 默认只验证。
 - 实际恢复只能指向另一套空云工作区，且不会迁移 Auth 用户或 Provider 密钥值。
 
-具体命令和发布门槛见根目录 `README.md`、`skills/sales-intelligence-workbench/SKILL.md`
-和 `docs/release-checklist.md`。恢复必须指向隔离的空工作区，禁止覆盖正在运行的生产库。
+具体命令见根目录 `README.md` 和
+`skills/sales-intelligence-workbench/SKILL.md`。恢复必须指向隔离的空工作区，禁止覆盖
+正在运行的生产库。

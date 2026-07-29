@@ -3,7 +3,7 @@ import { JobWorker } from "./workers/jobWorker.js";
 
 const context = createRuntimeContext();
 const enabled = ["1", "true", "yes", "on"].includes(
-  String(context.env.value("ASYNC_JOBS_ENABLED", context.runtimePolicy.is_production ? "true" : "false")).toLowerCase(),
+  String(context.env.value("ASYNC_JOBS_ENABLED", "true")).toLowerCase(),
 );
 
 if (!enabled) {

@@ -1,5 +1,5 @@
 import { createEnvReader } from "../src/config/runtimeEnv.js";
-import { createRuntimePolicy, publicRuntimePolicy } from "../src/config/runtimeMode.js";
+import { createRuntimePolicy, publicRuntimePolicy } from "../src/config/runtimePolicy.js";
 import { createDataProProvider } from "../src/providers/dataProProvider.js";
 import { createModelProvider } from "../src/providers/modelProvider.js";
 import { createOpenVikingProvider } from "../src/providers/openVikingProvider.js";
@@ -123,13 +123,8 @@ const providerStates = Object.fromEntries(
 
 const runtime = {
   app: publicRuntimePolicy(runtimePolicy),
-  repository_mode: env.value("REPOSITORY_MODE", "memory"),
-  supabase_read_only: truthy(env.value("SUPABASE_READ_ONLY", "true")),
-  demo_flags: {
-    sales_demo_stable_mode: truthy(env.value("SALES_DEMO_STABLE_MODE", "false")),
-    sales_professional_demo_fallback: truthy(env.value("SALES_PROFESSIONAL_DEMO_FALLBACK", "false")),
-    sales_skip_real_datapro: truthy(env.value("SALES_SKIP_REAL_DATAPRO", "false")),
-  },
+  repository_mode: env.value("REPOSITORY_MODE", "supabase"),
+  supabase_read_only: truthy(env.value("SUPABASE_READ_ONLY", "false")),
 };
 
 const startedAt = new Date().toISOString();
@@ -192,10 +187,6 @@ if (live) {
 
 const blockers = [];
 
-if (runtimePolicy.mode !== "production") {
-  blockers.push("APP_MODE is not production.");
-}
-
 blockers.push(...runtimePolicy.blockers);
 
 if (runtime.repository_mode !== "supabase") {
@@ -205,10 +196,6 @@ if (runtime.repository_mode !== "supabase") {
 for (const [name, state] of Object.entries(providerStates).filter(([name]) => selected(name))) {
   if (!state.configured) blockers.push(name + " is not configured.");
   if (!state.enabled) blockers.push(name + " is not enabled.");
-}
-
-for (const [name, enabled] of Object.entries(runtime.demo_flags)) {
-  if (enabled) blockers.push(name + " is enabled.");
 }
 
 if (live) {
@@ -245,7 +232,7 @@ const report = {
     openviking: checks.openviking || null,
     supabase: publicResult(checks.supabase),
   },
-  production_ready: !onlyProvider && blockers.length === 0,
+  runtime_ready: !onlyProvider && blockers.length === 0,
   blockers,
   finished_at: new Date().toISOString(),
 };

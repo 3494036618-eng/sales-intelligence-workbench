@@ -45,9 +45,10 @@ for (const relativePath of [
 const skill = read("skills/sales-intelligence-workbench/SKILL.md");
 const agent = read("skills/sales-intelligence-workbench/agents/openai.yaml");
 const workflow = read("skills/sales-intelligence-workbench/references/cookbook-workflow.md");
-const publicEntry = read("docs/agents/skills/sales-assistant-builder.md");
 const readme = read("README.md");
 const packageJson = JSON.parse(read("package.json"));
+const canonicalRepository = "https://github.com/3494036618-eng/sales-intelligence-workbench";
+const canonicalSkillUrl = `${canonicalRepository}/blob/v${packageJson.version}/skills/sales-intelligence-workbench/SKILL.md`;
 
 assert.match(skill, /^---\nname: sales-intelligence-workbench\n/m);
 assert.match(agent, /\$sales-intelligence-workbench/);
@@ -56,7 +57,12 @@ assert.match(skill, /onboard\.mjs/);
 assert.match(skill, /setup-openviking\.mjs/);
 assert.match(skill, /用户侧只输入\s*一枚 Agent Plan Key/);
 assert.match(skill, /## 远程 Skill 入口/);
-assert.match(skill, /帮我初始化销售助手：https:\/\/github\.com\/<owner>\/<repo>\/blob\/<ref>\/skills\/sales-intelligence-workbench\/SKILL\.md/);
+const publicSkillCommand = skill.match(
+  /帮我初始化销售助手：(https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/blob\/[A-Za-z0-9._-]+\/(?:[A-Za-z0-9_.-]+\/)*skills\/sales-intelligence-workbench\/SKILL\.md)/,
+);
+assert.ok(publicSkillCommand, "主 Skill 必须包含不带占位符的 GitHub 初始化 URL");
+assert.doesNotMatch(publicSkillCommand[1], /[<>]/);
+assert.equal(publicSkillCommand[1], canonicalSkillUrl);
 assert.match(skill, /node scripts\/validate-skill-package\.mjs/);
 assert.match(skill, /node scripts\/test-skill-installer\.mjs/);
 assert.match(skill, /Codex/);
@@ -71,12 +77,18 @@ assert.doesNotMatch(configure, /hiddenQuestion\(rl, output, "Supabase Service Ro
 assert.doesNotMatch(configure, /hiddenQuestion\(rl, output, "火山 (?:Access|Secret) Key/);
 assert.doesNotMatch(configure, /visibleQuestion\(rl, "Supabase Data API URL"/);
 assert.match(read("skills/sales-intelligence-workbench/scripts/setup-supabase.mjs"), /自动获取 Data API 端点和后端内部凭据/);
-assert.match(workflow, /DataPro → 豆包搜索 → 证据整理与模型生成 → Supabase/);
+assert.match(workflow, /专业数据集（DataPro）→ 豆包搜索（联网搜索）→ 证据整理与模型生成 → AI Native 应用开发底座（Supabase）/);
 assert.doesNotMatch(workflow, /DataPro → 豆包搜索 → OpenViking → 模型 → Supabase/);
-assert.match(publicEntry, /^---\nname: sales-assistant-builder\n/m);
-assert.match(publicEntry, /兼容入口/);
-assert.match(publicEntry, /sales-intelligence-workbench\/SKILL\.md/);
-assert.doesNotMatch(publicEntry, /\/Users\/|file:\/\//);
+for (const officialName of [
+  "专业数据集（DataPro）",
+  "豆包搜索（联网搜索）",
+  "Agent 记忆（OpenViking）",
+  "AI Native 应用开发底座（Supabase）",
+]) {
+  assert.match(skill, new RegExp(officialName), `主 Skill 缺少 Agent Plan 控制台名称：${officialName}`);
+  assert.match(readme, new RegExp(officialName), `README 缺少 Agent Plan 控制台名称：${officialName}`);
+  assert.match(workflow, new RegExp(officialName), `Cookbook 缺少 Agent Plan 控制台名称：${officialName}`);
+}
 assert.match(readme, /npm run skill:install/);
 assert.match(readme, /npm run skill:install:codex/);
 assert.match(readme, /npm run skill:install:claude/);
@@ -84,12 +96,40 @@ assert.match(readme, /\$sales-intelligence-workbench/);
 assert.match(readme, /\/sales-intelligence-workbench/);
 assert.match(readme, /npm run skill:command/);
 assert.match(readme, /skills\/sales-intelligence-workbench\/SKILL\.md/);
-assert.doesNotMatch(readme, /raw\.githubusercontent\.com\/<组织>\/<仓库>\/v0\.9\.0\/docs\/agents\/skills\/sales-assistant-builder\.md/);
+assert.match(
+  readme,
+  /帮我初始化销售助手：`https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/blob\/[A-Za-z0-9._-]+\/(?:[A-Za-z0-9_.-]+\/)*skills\/sales-intelligence-workbench\/SKILL\.md`/,
+);
+for (const relativePath of [
+  "README.md",
+  "CHANGELOG.md",
+  "THIRD_PARTY_NOTICES.md",
+  "docs/database/supabase-schema.md",
+  "skills/sales-intelligence-workbench/SKILL.md",
+]) {
+  const publicDocument = read(relativePath);
+  assert.doesNotMatch(publicDocument, /\/Users\/[^/\s]+|当前开发机|当前账号缺少|个人(?: GitHub|公开)?仓库|公司官方仓库/);
+  const salesRepositoryUrls = publicDocument.match(/https:\/\/github\.com\/[^/\s`]+\/sales-intelligence-workbench[^\s`)"]*/g) || [];
+  assert.ok(
+    salesRepositoryUrls.every((url) => url.startsWith(canonicalRepository)),
+    `${relativePath} 包含非当前发行仓库的销售工作台地址`,
+  );
+}
+for (const internalOnlyPath of [
+  "目录说明.md",
+  "docs/production-readiness-roadmap.md",
+  "docs/release-checklist.md",
+  "docs/agents/skills/sales-assistant-builder.md",
+]) {
+  assert.equal(fs.existsSync(path.join(root, internalOnlyPath)), false, `公开包不应包含内部或遗留文件：${internalOnlyPath}`);
+}
 assert.equal(packageJson.scripts?.["skill:install"], "node scripts/install-codex-skill.mjs");
 assert.equal(packageJson.scripts?.["skill:install:codex"], "node scripts/install-codex-skill.mjs");
 assert.equal(packageJson.scripts?.["skill:install:claude"], "node scripts/install-claude-code-skill.mjs");
 assert.equal(packageJson.scripts?.["skill:install:all"], "node scripts/install-agent-skill.mjs --target all");
 assert.equal(packageJson.scripts?.["skill:command"], "node scripts/print-public-skill-command.mjs");
+assert.equal(packageJson.scripts?.["release:validate"], "node scripts/validate-public-release.mjs");
+assert.match(packageJson.scripts?.verify || "", /release:validate/);
 assert.match(packageJson.scripts?.verify || "", /skill:validate/);
 assert.match(packageJson.scripts?.verify || "", /skill:test/);
 assert.match(packageJson.scripts?.verify || "", /backend run release:verify/);

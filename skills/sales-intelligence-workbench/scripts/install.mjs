@@ -46,7 +46,7 @@ try {
 
   if (!skipTests) {
     run(process.execPath, ["--check", "frontend/app.js"], { cwd: staging });
-    run(process.execPath, ["--check", "frontend/services.js"], { cwd: staging });
+    run(process.execPath, ["--check", "frontend/text-format.js"], { cwd: staging });
     run(process.platform === "win32" ? "npm.cmd" : "npm", ["test"], {
       cwd: path.join(staging, "backend"),
       env: { ...process.env, NODE_ENV: "test" },

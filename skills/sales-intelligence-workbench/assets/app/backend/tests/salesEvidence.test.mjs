@@ -343,7 +343,7 @@ test("QA answerability rejects unrelated questions even when enterprise evidence
   assert.equal(assessQaAnswerability("今天当地天气怎么样？", evidence).supported, false);
 });
 
-test("production evidence policy rejects undated or untraceable latest sources", () => {
+test("runtime evidence policy rejects undated or untraceable latest sources", () => {
   const pack = buildDossierEvidencePack({
     company,
     generatedAt: "2026-07-21T10:00:00.000Z",

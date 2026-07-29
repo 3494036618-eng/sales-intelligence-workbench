@@ -59,11 +59,9 @@ export const SECRET_KEYS = Object.freeze([
   "VOLCENGINE_ACCESS_KEY",
   "VOLCENGINE_SECRET_KEY",
   "SUPABASE_SERVICE_ROLE_KEY",
-  "VISION_API_KEY",
 ]);
 
 export const RUNTIME_KEYS = Object.freeze([
-  "APP_MODE",
   "REPOSITORY_MODE",
   "HOST",
   "PORT",
@@ -135,22 +133,13 @@ export const RUNTIME_KEYS = Object.freeze([
   "APP_WORKSPACE_SLUG",
   "APP_WORKSPACE_NAME",
   "APP_WORKSPACE_PLAN_MODE",
-  "VISION_BASE_URL",
-  "VISION_IMAGE_MODEL",
-  "VISION_RUN_ENABLED",
-  "VISION_TIMEOUT_MS",
-  "VISION_IMAGE_SIZE",
   "FEISHU_SYNC_ENABLED",
   "FEISHU_CLI_IMPORT_ENABLED",
   "FEISHU_CLI_IMPORT_TASK_LIMIT",
   "LIVE_DOCTOR_TTL_MS",
-  "SALES_DEMO_STABLE_MODE",
-  "SALES_PROFESSIONAL_DEMO_FALLBACK",
-  "SALES_SKIP_REAL_DATAPRO",
 ]);
 
 const RUNTIME_DEFAULTS = Object.freeze({
-  APP_MODE: "production",
   REPOSITORY_MODE: "supabase",
   HOST: "127.0.0.1",
   PORT: "8787",
@@ -208,17 +197,10 @@ const RUNTIME_DEFAULTS = Object.freeze({
   APP_WORKSPACE_SLUG: "default",
   APP_WORKSPACE_NAME: "Sales Workbench",
   APP_WORKSPACE_PLAN_MODE: "agent_plan",
-  VISION_BASE_URL: "https://ark.cn-beijing.volces.com/api/plan/v3",
-  VISION_IMAGE_MODEL: "doubao-seedream-5.0-lite",
-  VISION_TIMEOUT_MS: "60000",
-  VISION_IMAGE_SIZE: "1920x1920",
   FEISHU_SYNC_ENABLED: "false",
   FEISHU_CLI_IMPORT_ENABLED: "false",
   FEISHU_CLI_IMPORT_TASK_LIMIT: "100",
   LIVE_DOCTOR_TTL_MS: "900000",
-  SALES_DEMO_STABLE_MODE: "false",
-  SALES_PROFESSIONAL_DEMO_FALLBACK: "false",
-  SALES_SKIP_REAL_DATAPRO: "false",
 });
 
 export function ensureDirectories() {
@@ -296,7 +278,7 @@ export function readConfiguration() {
   };
 }
 
-export function writeConfiguration(inputValues, { mode = "production" } = {}) {
+export function writeConfiguration(inputValues) {
   ensureDirectories();
   const current = readConfiguration();
   const values = { ...current, ...inputValues };
@@ -309,7 +291,6 @@ export function writeConfiguration(inputValues, { mode = "production" } = {}) {
     "VOLCENGINE_ARK_API_KEY",
     "DATAPRO_API_KEY",
     "WEB_SEARCH_API_KEY",
-    "VISION_API_KEY",
   ]);
   const capabilityOverride = (key, aliases = []) => {
     if (hasInput(key)) return String(inputValues[key] || "");
@@ -325,25 +306,18 @@ export function writeConfiguration(inputValues, { mode = "production" } = {}) {
     VOLCENGINE_ACCESS_KEY: firstValue(values, ["VOLCENGINE_ACCESS_KEY"]),
     VOLCENGINE_SECRET_KEY: firstValue(values, ["VOLCENGINE_SECRET_KEY"]),
     SUPABASE_SERVICE_ROLE_KEY: firstValue(values, ["SUPABASE_SERVICE_ROLE_KEY"]),
-    VISION_API_KEY: capabilityOverride("VISION_API_KEY"),
   };
   const runtimeValues = { ...RUNTIME_DEFAULTS };
   for (const key of RUNTIME_KEYS) {
     if (values[key] !== undefined && values[key] !== "") runtimeValues[key] = String(values[key]);
   }
-  runtimeValues.APP_MODE = mode;
   if (!runtimeValues.APP_WORKSPACE_ID) runtimeValues.APP_WORKSPACE_ID = randomUUID();
   if (!runtimeValues.ALLOWED_ORIGINS) {
     const port = Number(runtimeValues.PORT) || 8787;
     runtimeValues.ALLOWED_ORIGINS = `http://127.0.0.1:${port},http://localhost:${port}`;
   }
-  if (mode === "production") {
-    runtimeValues.REPOSITORY_MODE = "supabase";
-    runtimeValues.SUPABASE_READ_ONLY = "false";
-    runtimeValues.SALES_DEMO_STABLE_MODE = "false";
-    runtimeValues.SALES_PROFESSIONAL_DEMO_FALLBACK = "false";
-    runtimeValues.SALES_SKIP_REAL_DATAPRO = "false";
-  }
+  runtimeValues.REPOSITORY_MODE = "supabase";
+  runtimeValues.SUPABASE_READ_ONLY = "false";
   runtimeValues.MODEL_RUN_ENABLED = configuredFlag(values, "MODEL_RUN_ENABLED", Boolean(credentialValues.MODEL_API_KEY || agentPlanKey));
   runtimeValues.DATAPRO_RUN_ENABLED = configuredFlag(values, "DATAPRO_RUN_ENABLED", Boolean(credentialValues.DATAPRO_API_KEY || agentPlanKey));
   runtimeValues.WEB_SEARCH_RUN_ENABLED = configuredFlag(values, "WEB_SEARCH_RUN_ENABLED", Boolean(credentialValues.WEB_SEARCH_API_KEY || agentPlanKey));
@@ -364,8 +338,6 @@ export function writeConfiguration(inputValues, { mode = "production" } = {}) {
       && runtimeValues.APP_WORKSPACE_ID
     ),
   );
-  runtimeValues.VISION_RUN_ENABLED = configuredFlag(values, "VISION_RUN_ENABLED", Boolean(credentialValues.VISION_API_KEY || agentPlanKey));
-
   writeEnvFile(paths.credentialsFile, "# 销售智能工作台私密凭证。不要提交此文件。", SECRET_KEYS, credentialValues);
   writeEnvFile(paths.runtimeFile, "# 销售智能工作台非敏感运行配置。", RUNTIME_KEYS, runtimeValues);
   return { credentials: credentialValues, runtime: runtimeValues };
@@ -542,7 +514,7 @@ export function liveDoctorEvidence() {
     const ageMs = Number.isFinite(finishedAt) ? Date.now() - finishedAt : Number.POSITIVE_INFINITY;
     return {
       exists: true,
-      fresh: Boolean(report.production_ready && ageMs >= 0 && ageMs <= ttlMs),
+      fresh: Boolean(report.runtime_ready && ageMs >= 0 && ageMs <= ttlMs),
       age_ms: Number.isFinite(ageMs) ? ageMs : null,
       ttl_ms: ttlMs,
       report,
@@ -557,8 +529,7 @@ export function configurationSummary() {
   const hasAgentPlanKey = Boolean(values.AGENT_PLAN_API_KEY);
   const openVikingCli = openVikingCliConfiguration(values);
   return {
-    app_mode: values.APP_MODE || null,
-    repository_mode: values.REPOSITORY_MODE || null,
+    repository_mode: values.REPOSITORY_MODE || "supabase",
     http_auth: String(values.HTTP_AUTH_ENABLED || "false").toLowerCase() === "true",
     async_jobs: String(values.ASYNC_JOBS_ENABLED || "false").toLowerCase() === "true",
     worker_lease_seconds: Number(values.JOB_WORKER_LEASE_SECONDS || 0),
@@ -574,6 +545,5 @@ export function configurationSummary() {
     supabase_control_plane: Boolean(values.VOLCENGINE_ACCESS_KEY && values.VOLCENGINE_SECRET_KEY),
     feishu_sync: [values.FEISHU_CLI_IMPORT_ENABLED, values.FEISHU_SYNC_ENABLED]
       .some((value) => String(value || "false").toLowerCase() === "true"),
-    vision: Boolean(values.VISION_API_KEY || hasAgentPlanKey),
   };
 }

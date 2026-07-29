@@ -5,7 +5,6 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { WORKSPACE_TABLE_SPECS, RESTORE_ORDER } from "../src/backup/supabaseBackup.js";
 import { SupabaseDataRepository } from "../src/repositories/supabaseDataRepository.js";
-import { SupabaseRepository } from "../src/repositories/supabaseRepository.js";
 
 const backendDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const rootDir = path.resolve(backendDir, "..");
@@ -29,7 +28,6 @@ test("Supabase backup and restore never carry legacy QA message bodies", () => {
   assert.equal(RESTORE_ORDER.includes("sales_qa_messages_legacy"), false);
 });
 
-test("Supabase repositories expose no QA body persistence method", () => {
+test("Supabase Data API repository exposes no QA body persistence method", () => {
   assert.equal(Object.hasOwn(SupabaseDataRepository.prototype, "persistSalesQaMessage"), false);
-  assert.equal(Object.hasOwn(SupabaseRepository.prototype, "persistSalesQaMessage"), false);
 });

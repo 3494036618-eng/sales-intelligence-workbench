@@ -1,16 +1,16 @@
 # 销售智能工作台
 
-销售智能工作台把企业专业数据、公开信息、飞书资料和长期记忆组织成可追溯的企业档案与资料问答。项目包含完整前后端、Supabase 数据层、OpenViking 记忆链路，以及可在 Codex 和 Claude Code 中安装并运维应用的同一份 Skill。
+销售智能工作台把企业专业数据、公开信息、飞书资料和长期记忆组织成可追溯的企业档案与资料问答。项目包含完整前后端、AI Native 应用开发底座（Supabase）数据层、Agent 记忆（OpenViking）链路，以及可在 Codex 和 Claude Code 中安装并运维应用的同一份 Skill。
 
-> 当前为 `0.9.0` Beta，仅支持单工作区、单人使用，以及本机或受控内网自托管。已支持 Supabase Auth、工作区数据隔离、安全请求边界、工作区级付费任务保护、持久化异步任务队列和独立 Worker。首版不提供公网生产 SaaS、多人协作或 SLA；不要把 Node.js 服务端口直接暴露到公网。
+> 当前为 `0.9.1` Beta，仅支持单工作区、单人使用，以及本机或受控内网自托管。已支持 Supabase Auth、工作区数据隔离、安全请求边界、工作区级付费任务保护、持久化异步任务队列和独立 Worker。首版不提供公网生产 SaaS、多人协作或 SLA；不要把 Node.js 服务端口直接暴露到公网。
 
 ## 核心能力
 
-- 通过 DataPro 解析真实企业主体并加入目标企业池。
-- 仅使用专业数据集和豆包搜索生成带引用的最新档案，避免内部资料混入外部事实报告。
+- 通过专业数据集（DataPro）解析真实企业主体并加入目标企业池。
+- 仅使用专业数据集（DataPro）和豆包搜索（联网搜索）生成带引用的最新档案，避免内部资料混入外部事实报告。
 - 使用 Codex CLI 调度飞书 CLI，增量导入云文档、群聊、单聊或消息搜索结果。
-- 将飞书资料正文和资料问答会话按 Workspace、企业隔离写入 OpenViking，并在问答前真实检索和恢复。
-- 使用 Supabase 保存企业、档案版本、引用、任务、工作区归属、Provider 运行记录，以及资料与会话的同步元数据。
+- 将飞书资料正文和资料问答会话按 Workspace、企业隔离写入 Agent 记忆（OpenViking），并在问答前真实检索和恢复。
+- 使用 AI Native 应用开发底座（Supabase）保存企业、档案版本、引用、任务、工作区归属、Provider 运行记录，以及资料与会话的同步元数据。
 - 后端记录任务状态、失败原因、模型 Token 和 Provider 调用证据，供诊断接口与日志审计；正式业务前端不展示后台配置和运维信息。
 - 通过 Supabase Auth 保护业务与付费调用；当前 Beta 供单个用户使用，不提供成员邀请与角色管理。
 - 企业搜索、档案、问答、资料导入、OpenViking 同步/提交和资源删除统一经过工作区级并发与每日次数保护。
@@ -21,9 +21,7 @@
 
 ## 真实性原则
 
-`production` 模式禁止演示数据、固定报告和静态 Provider 兜底。DataPro、联网搜索、OpenViking 或模型失败时，依赖该能力的操作会明确失败，不会生成看似真实的替代结果。关键结论必须关联实际来源；生成“最新档案”至少需要一个可追溯且有 180 天内日期的公开来源。注册资本、营收、净利润、融资、估值及明确司法/处罚事实必须满足双来源规则，关键数字不一致时不能自行选择。来源没有可核验日期时，界面显示“未知”，不会用档案生成时间冒充资料时间。
-
-`demo` 模式只用于隔离录屏，不属于正式 Skill 的配置入口，也不会连接真实 Provider 或正式数据库。
+项目只有一种运行方式：连接真实 Provider 与 Supabase，并在配置或依赖不完整时失败关闭。专业数据集（DataPro）、豆包搜索（联网搜索）、Agent 记忆（OpenViking）或模型失败时，依赖该能力的操作会明确失败，不会生成演示数据、固定报告或静态替代结果。关键结论必须关联实际来源；生成“最新档案”至少需要一个可追溯且有 180 天内日期的公开来源。注册资本、营收、净利润、融资、估值及明确司法/处罚事实必须满足双来源规则，关键数字不一致时不能自行选择。来源没有可核验日期时，界面显示“未知”，不会用档案生成时间冒充资料时间。
 
 ## 架构
 
@@ -35,8 +33,8 @@
            -> Supabase 持久化任务队列
 独立 Worker
   -> 原子领取任务与续租
-  -> Agent Plan 模型 / DataPro / 豆包联网搜索
-  -> OpenViking 资料与对话记忆 / Supabase Data API
+  -> Agent Plan 模型 / 专业数据集（DataPro）/ 豆包搜索（联网搜索）
+  -> Agent 记忆（OpenViking）/ AI Native 应用开发底座（Supabase）Data API
 
 Codex CLI / 前端导入入口
   -> 飞书 CLI
@@ -51,32 +49,31 @@ Supabase 是结构化业务事实库；OpenViking 是飞书资料正文、资料
 
 ### 面向最终用户：一句话初始化
 
-公开仓库并创建不可变 release tag 后，维护者生成最终口令：
+当前独立发行仓库的版本化初始化入口为：
 
-```bash
-npm run skill:command -- \
-  --repository https://github.com/<组织>/<仓库> \
-  --ref v0.9.0
-```
-
-把命令输出的整句话交给用户。用户可在 Codex 或 Claude Code 中发送：
-
-> 帮我初始化销售助手：`https://github.com/<组织>/<仓库>/blob/v0.9.0/skills/sales-intelligence-workbench/SKILL.md`
+> 帮我初始化销售助手：`https://github.com/3494036618-eng/sales-intelligence-workbench/blob/v0.9.1/skills/sales-intelligence-workbench/SKILL.md`
 
 该 URL 直接指向唯一的正式 Skill。即使用户本机没有仓库、依赖和配置文件，当前 Agent 也会
-先解释下载与本机写入影响，再从 URL 锁定的 release 取得完整仓库，执行离线校验，并把同一份
+先解释下载与本机写入影响，再从 URL 指定的版本取得完整仓库，执行离线校验，并把同一份
 Skill 安装到当前客户端后立即衔接下面的 Cookbook 搭建流程。读取 URL、下载仓库和离线校验
 不会创建云资源或产生 AFP。
 
-这里的“从 0 搭建”不等于绕过第三方服务授权：用户仍需拥有 Agent Plan 及对应 Harness
-权限，并在流程中完成 Supabase、OpenViking 和可选飞书资料的账号授权。用户侧只输入一枚
+初始化入口必须固定到已发布的 tag 或经过审核的 commit SHA。也可以用仓库脚本生成口令：
+
+```bash
+npm run skill:command -- \
+  --repository https://github.com/3494036618-eng/sales-intelligence-workbench \
+  --ref v0.9.1
+```
+
+这里的“从 0 搭建”不等于绕过第三方服务授权：用户仍需拥有 Agent Plan，并在控制台开启
+专业数据集（DataPro）、豆包搜索（联网搜索）、Agent 记忆（OpenViking）和
+AI Native 应用开发底座（Supabase），再按需完成飞书资料授权。用户侧只输入一枚
 Agent Plan Key；OpenViking 与 Supabase 的内部连接信息由 Skill 自动获取和私密保存，不要求
 第二个 Key、Supabase Key 或火山 AK/SK。Skill 负责识别缺项、逐步引导、写入本机私密配置和验收。
 
-当前仓库已有发布候选远端和 `v0.9.0-rc.1` 候选标签，但本轮待验收改动尚未形成经用户
-确认的不可变正式 tag，因此上面的占位地址仍不能发送给外部用户。发布者必须先完成
-LICENSE 与代码归属确认、干净环境安装和最终业务验收，取得明确发布许可后，再用生成脚本
-得到最终 URL；不得把旧候选标签或占位地址写进宣传材料。
+不同账号授权、资料范围和部署环境会影响真实链路结果；安装和部署时必须运行当前版本的
+自动验证，并在目标环境完成配置、权限和业务链路检查。
 
 ### 面向维护者：本地安装
 
@@ -109,7 +106,7 @@ npm run skill:install:all
 
 > /sales-intelligence-workbench
 
-Skill 会先确认销售目标和资料范围，再通过可恢复的安全编排器安装经过测试的完整前后端模板，依次连接 Agent Plan 模型与 Harness、Agent Plan Supabase、OpenViking 和授权资料，最后运行真实企业搜索、档案及资料问答验收。它不会为每位用户临时拼一套静态前端，也不会用演示数据冒充完成；云资源写入、真实调用、登录和业务验收都会停下来取得用户确认。
+Skill 会先确认销售目标和资料范围，再通过可恢复的安全编排器安装经过测试的完整前后端模板，依次连接 Agent Plan 模型、专业数据集（DataPro）、豆包搜索（联网搜索）、Agent 记忆（OpenViking）、AI Native 应用开发底座（Supabase）和授权资料，最后运行真实企业搜索、档案及资料问答验收。它不会为每位用户临时拼一套静态前端，也不会用演示数据冒充完成；云资源写入、真实调用、登录和业务验收都会停下来取得用户确认。
 
 继续上次搭建或让 Skill 自动推进安全步骤：
 
@@ -135,11 +132,18 @@ npm run skill:install:claude -- --force
 ## 前置条件
 
 - Node.js 20 或更高版本。
-- 可用的 Agent Plan 模型、DataPro 和豆包联网搜索权限。
-- 北京地域、已启用 Agent Plan 抵扣的火山引擎 Supabase Workspace。
-- Agent Plan 已开启 OpenViking Harness；本机有 `uvx` 时可自动调用官方控制面。
+- 可用的 Agent Plan 模型。
 - 可选：已安装并以用户身份登录的 `lark-cli`。
 - 数据库初始化、迁移和备份需要 `byted-supabase-cli` 及相应控制面权限。
+
+在 Agent Plan 控制台的能力列表找到以下卡片，确认“开启抵扣”；首次使用时按卡片中的“配置使用”完成授权。本文后续始终使用“控制台名称（内部技术名或作用说明）”的写法：
+
+| Agent Plan 控制台名称 | 本项目中的作用 | 要求 |
+| --- | --- | --- |
+| 专业数据集（DataPro） | 企业主体识别、工商、经营和风险等专业事实 | 必需 |
+| 豆包搜索（联网搜索） | 近期公开动态、公告、报道和可追溯网页来源 | 必需 |
+| Agent 记忆（OpenViking） | 飞书资料正文、资料检索、问答 Session 和长期记忆 | 必需 |
+| AI Native 应用开发底座（Supabase） | 企业、档案、引用、任务、权限和同步元数据 | 必需；使用北京地域 Agent Plan Workspace |
 
 密钥只能写入本机私密配置或部署平台 Secret，不要粘贴到 Issue、日志、截图或提交记录。
 
@@ -154,8 +158,7 @@ node skills/sales-intelligence-workbench/scripts/configure.mjs
 
 ```bash
 node skills/sales-intelligence-workbench/scripts/configure.mjs \
-  --from-env-file /absolute/path/to/backend/.env.local \
-  --mode production
+  --from-env-file /absolute/path/to/backend/.env.local
 ```
 
 ### 初始化 OpenViking
@@ -223,7 +226,7 @@ node skills/sales-intelligence-workbench/scripts/start.mjs
 node skills/sales-intelligence-workbench/scripts/status.mjs
 ```
 
-`start.mjs` 会同时启动同源 API 和独立 Worker；`status.mjs` 分别报告两个进程。生产模式缺少队列迁移或 Worker 配置时会失败关闭，不会退回同步假成功。
+`start.mjs` 会同时启动同源 API 和独立 Worker；`status.mjs` 分别报告两个进程。缺少队列迁移或 Worker 配置时会失败关闭，不会退回同步假成功。
 
 首次打开页面时，需要在浏览器中创建个人登录账号。完成后，匿名请求无法读取业务数据，付费 Provider 和运维接口仅对该登录账号开放。
 
@@ -289,26 +292,27 @@ node skills/sales-intelligence-workbench/scripts/sync-assets.mjs --check
 node skills/sales-intelligence-workbench/scripts/self-test.mjs
 ```
 
-真实业务链路可先使用 Skill 的 `verify-business-chain.mjs --confirm-live` 验证企业搜索与加入、带引用档案、OpenViking 召回/写入、资料问答、Provider Run 和 Token。该命令会产生 AFP/Token 并保留业务记录；飞书增量导入、重启持久化、版本比较、备份与独立恢复仍需按发布清单补充。任何一步使用固定前端数据都不通过。
+真实业务链路可使用 Skill 的 `verify-business-chain.mjs --confirm-live` 验证企业搜索与加入、
+带引用档案、OpenViking 召回/写入、资料问答、Provider Run 和 Token。该命令会产生
+AFP/Token 并保留业务记录。飞书增量导入、运行中重启、版本比较、备份与隔离恢复需要在
+获授权环境中分别验证；任何一步使用固定前端数据都不能作为真实验收结果。
 
 ## 已知限制
 
 - 当前是单工作区、单人自托管架构；不提供成员邀请与角色管理，也尚未支持企业 SSO、MFA 和多工作区管理。
 - 本机默认使用 HTTP；公网部署需自行配置 HTTPS 反向代理，并启用 Secure Cookie。
-- 已有 IP/用户级限流、请求体上限、Workspace 付费任务保护、Provider 熔断和独立异步 Worker；生产库必须应用到 `202607280002`。当前仍没有精确 AFP/金额预算。
+- 已有 IP/用户级限流、请求体上限、Workspace 付费任务保护、Provider 熔断和独立异步 Worker；目标数据库必须应用到 `202607280002`。当前仍没有精确 AFP/金额预算。
 - 当前持久化异步队列覆盖档案生成和 OpenViking 批量同步；前端飞书导入使用后端进程内受控任务，服务重启后任务进度不会恢复，但已成功写入的 OpenViking 正文和 Supabase 同步元数据不会丢失。首个稳定版还需把导入任务迁入持久化队列，并完成高可用 Worker 和容量压测。
 - 飞书读取范围受当前用户权限和飞书 CLI 能力限制，不能绕过平台权限。
 - 新建 Supabase Workspace 可能持续计费，因此 Skill 不会未经确认自动创建。
 - 上游 Provider 可用性由服务方决定，诊断成功不代表长期 SLA。
 
-## Beta 发布门槛
+## 支持与安全
 
-逐项执行并留存结果：[单工作区自托管 Beta 发布验收清单](docs/release-checklist.md)。
+当前版本只支持单工作区、单用户、本机或受控内网自托管，不提供公网生产 SaaS、多人协作
+或 SLA。源码使用、分发和贡献应遵守 [LICENSE](LICENSE)；第三方服务及数据仍受各自条款
+约束。
 
-- 发布变化见 [变更记录](CHANGELOG.md)，外部能力与分发边界见 [第三方组件与外部服务说明](THIRD_PARTY_NOTICES.md)。
-- 由代码所有方确认开源授权与 [LICENSE](LICENSE)；许可证文件存在不等于已完成公司内部代码产权审批。
-- 完成干净外部机器安装和真实浏览器端到端验收。
-- 首版只支持单工作区、单人、本机或受控内网自托管；公网生产配置属于后续版本，不作为当前 Beta 的能力承诺。
-- 执行密钥、真实客户资料、截图、日志和第三方版权材料清查。
-
-安全问题请参阅 [SECURITY.md](SECURITY.md)，贡献流程见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+安全问题请参阅 [SECURITY.md](SECURITY.md)，部署要求见
+[单工作区自托管部署](docs/deployment/self-hosting.md)，贡献流程见
+[CONTRIBUTING.md](CONTRIBUTING.md)，版本变化见 [CHANGELOG.md](CHANGELOG.md)。

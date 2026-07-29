@@ -2,7 +2,7 @@
 
 ## Supported scope
 
-The current release candidate supports one self-hosted workspace. It includes Supabase Auth, browser and CLI user sessions, CSRF protection for cookie-authenticated mutations, workspace membership, and `owner` / `admin` / `member` / `viewer` roles.
+The current `v0.9.1` Beta release supports one self-hosted workspace and one user. It includes Supabase Auth, browser and CLI user sessions, CSRF protection for cookie-authenticated mutations, workspace ownership records, and internal authorization roles. The public product does not expose member invitation or role-management features.
 
 This is not a managed multi-tenant SaaS release. The default listener remains `127.0.0.1`. Do not expose the backend port directly to the public Internet; place the application behind an HTTPS reverse proxy and complete the deployment checks below.
 
@@ -21,10 +21,10 @@ Rotate any credential that appeared in chat, screenshots, logs, commits, or issu
 
 - Keep Provider keys and the Supabase Service Role Key on the backend only.
 - Keep the default loopback bind unless HTTPS, Secure Cookie, exact Origin allowlists, request limits, and network access controls are configured.
-- Configure production SMTP and allowed Auth Redirect URLs before inviting members or enabling password recovery.
+- Configure SMTP and allowed Auth Redirect URLs before enabling password recovery.
 - Use a dedicated Supabase Workspace and OpenViking namespace for each deployment.
 - Import only Feishu content the operator is authorized to process.
 - Store backups as private data and test restores on an isolated target.
 - Keep audit events enabled for business writes, Provider probes, and workspace exports; audit payloads must remain metadata-only.
 - Run configuration doctor, database migration smoke checks, the repository test suite, and release verification before upgrading.
-- Do not claim public production readiness until the release checklist, license review, and an authorized real-data end-to-end acceptance have all passed.
+- Do not describe this Beta as a managed multi-tenant SaaS or an SLA-backed service.

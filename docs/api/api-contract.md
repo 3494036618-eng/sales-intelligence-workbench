@@ -2,8 +2,7 @@
 
 更新时间：2026-07-26
 
-本文只记录当前销售智能工作台的公开 API。早期原型接口不属于公开合约，并在
-`APP_MODE=production` 时关闭。
+本文只记录当前销售智能工作台的公开 API。早期原型接口不属于公开合约，相关路由已删除。
 
 ## 1. 基础约定
 
@@ -15,18 +14,14 @@
 http://127.0.0.1:8787/api
 ```
 
-通过 HTTP(S) 打开前端时，前端调用同源 `/api`。生产部署应由 HTTPS 反向代理同时
+通过 HTTP(S) 打开前端时，前端调用同源 `/api`。对外部署应由 HTTPS 反向代理同时
 代理前端和 API，不应把后端端口直接暴露到公网。
 
-### 运行模式
+### 运行边界
 
-| `APP_MODE` | 数据与 Provider 行为 |
-| --- | --- |
-| `production` | 仅允许真实 Provider 和 Supabase 持久化；配置或安全队列不完整时失败关闭 |
-| `development` | 用于本地开发；允许内存仓库，但不会自动填充演示企业 |
-| `demo` | 仅使用演示数据；禁止真实 Provider 探针，不能作为生产验收依据 |
-
-`GET /api/health` 返回当前 `app_mode`、`provider_mode` 和 `runtime_ready`。
+项目仅连接真实 Provider 与 Supabase 持久化。配置、安全保护或依赖不完整时失败关闭，
+不提供可切换的开发或演示运行方式。`GET /api/health` 返回 `provider_mode` 和
+`runtime_ready`。
 
 ### 响应格式
 
@@ -37,7 +32,6 @@ http://127.0.0.1:8787/api
   "data": {},
   "meta": {
     "request_id": "req_...",
-    "app_mode": "production",
     "provider_mode": "real"
   }
 }
@@ -102,7 +96,7 @@ Bearer 请求不依赖浏览器 Cookie，因此不要求 CSRF Header。
 
 | Method | Path | 用途 |
 | --- | --- | --- |
-| GET | `/api/health` | 健康状态与运行模式 |
+| GET | `/api/health` | 健康状态与运行就绪度 |
 | GET | `/api/auth/status` | 登录状态、bootstrap 状态和 CSRF Token |
 | POST | `/api/auth/bootstrap` | 创建个人账号；完成后不再开放 |
 | POST | `/api/auth/login` | 浏览器邮箱密码登录 |
@@ -131,7 +125,6 @@ Bearer 请求不依赖浏览器 Cookie，因此不要求 CSRF Header。
 POST /api/providers/web-search/probe
 POST /api/providers/datapro/probe
 POST /api/providers/model/probe
-POST /api/providers/vision/probe
 POST /api/providers/openviking/probe
 POST /api/providers/supabase/probe
 ```
@@ -194,7 +187,7 @@ POST /api/providers/supabase/probe
 { "company_id": "company_..." }
 ```
 
-生产模式不会根据一个未核验名称虚构企业主体；专业数据未返回可确认主体时，请求失败
+工作台不会根据一个未核验名称虚构企业主体；专业数据未返回可确认主体时，请求失败
 或返回待确认状态，不能把该结果当成真实企业档案。
 
 生成档案和同步 OpenViking 可传幂等键：
@@ -236,7 +229,7 @@ POST /api/providers/supabase/probe
 ```
 
 云文档目标必须是完整的 `https://` 飞书或 Lark 云文档/知识库链接；会话目标不接受
-Open ID。该任务调用本机已授权的 `lark-cli`，不会接收或返回飞书令牌。生产模式必须显式设置
+Open ID。该任务调用本机已授权的 `lark-cli`，不会接收或返回飞书令牌。启用前必须显式设置
 `FEISHU_CLI_IMPORT_ENABLED=true`。任务进度当前只保存在 API 进程内存中，服务重启后
 无法继续查询旧任务；已经完成的 OpenViking 正文与 Supabase 同步元数据不受影响。
 
@@ -250,7 +243,7 @@ Open ID。该任务调用本机已授权的 `lark-cli`，不会接收或返回�
 ```
 
 `action` 仅允许 `pause`、`resume` 或 `delete`。删除会同时尝试删除对应 OpenViking
-资源；生产模式下长期记忆删除失败时整体失败关闭。
+资源；长期记忆删除失败时整体失败关闭。
 
 资料问答：
 
@@ -262,7 +255,7 @@ Open ID。该任务调用本机已授权的 `lark-cli`，不会接收或返回�
 
 ## 5. 异步任务语义
 
-档案生成和 OpenViking 批量同步在 production 中返回 `202 Accepted` 和公开 Job DTO：
+档案生成和 OpenViking 批量同步返回 `202 Accepted` 和公开 Job DTO：
 
 ```json
 {
@@ -311,7 +304,7 @@ Open ID。该任务调用本机已授权的 `lark-cli`，不会接收或返回�
 | 401 | `authentication_required` | 未登录或 CLI 会话过期 |
 | 403 | `insufficient_role` / `csrf_failed` | 角色不足或 CSRF 校验失败 |
 | 404 | `not_found` / `*_not_found` | 路由或当前工作区对象不存在 |
-| 409 | `already_exists` / `provider_probe_disabled` | 状态冲突或演示模式禁用探针 |
+| 409 | `already_exists` | 状态冲突 |
 | 422 | `job_type_unsupported` | 不支持的任务或动作 |
 | 429 | `paid_workflow_*` / `*_rate_limit_exceeded` | 工作流保护或请求限流 |
 | 503 | `runtime_not_ready` / `*_unavailable` | 生产配置、队列或 Provider 不可用 |

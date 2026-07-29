@@ -151,7 +151,7 @@ try {
   const publicCommand = spawnSync(process.execPath, [
     commandPrinter,
     "--repository", "https://github.com/example/sales-workbench",
-    "--ref", "v0.9.0",
+    "--ref", "v0.9.1",
   ], {
     cwd: root,
     env: baseEnvironment,
@@ -160,9 +160,25 @@ try {
   assert.equal(publicCommand.status, 0, publicCommand.stderr);
   assert.equal(
     publicCommand.stdout.trim(),
-    "帮我初始化销售助手：https://github.com/example/sales-workbench/blob/v0.9.0/skills/sales-intelligence-workbench/SKILL.md",
+    "帮我初始化销售助手：https://github.com/example/sales-workbench/blob/v0.9.1/skills/sales-intelligence-workbench/SKILL.md",
   );
   assert.doesNotMatch(publicCommand.stdout, /sales-assistant-builder\.md/);
+
+  const nestedPublicCommand = spawnSync(process.execPath, [
+    commandPrinter,
+    "--repository", "https://github.com/volcengine/ai-app-lab",
+    "--ref", "0123456789abcdef",
+    "--skill-path", "demohouse/sales-intelligence-workbench/skills/sales-intelligence-workbench/SKILL.md",
+  ], {
+    cwd: root,
+    env: baseEnvironment,
+    encoding: "utf8",
+  });
+  assert.equal(nestedPublicCommand.status, 0, nestedPublicCommand.stderr);
+  assert.equal(
+    nestedPublicCommand.stdout.trim(),
+    "帮我初始化销售助手：https://github.com/volcengine/ai-app-lab/blob/0123456789abcdef/demohouse/sales-intelligence-workbench/skills/sales-intelligence-workbench/SKILL.md",
+  );
 
   const mutableCommand = spawnSync(process.execPath, [
     commandPrinter,

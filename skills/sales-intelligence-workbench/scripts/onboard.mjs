@@ -24,7 +24,6 @@ function usage() {
 
 可选参数：
   --from-env-file <路径>   从现有私密环境文件迁移配置
-  --mode production        production 或 development
   --apply-supabase --yes   用户确认后初始化指定的 Agent Plan Supabase
   --supabase-workspace-id <Workspace ID>
   --supabase-branch-id <Branch ID>
@@ -55,7 +54,6 @@ function parseArgs(argv) {
     sources: "",
     deployment: "",
     fromEnvFile: "",
-    mode: "production",
     openVikingResourceId: "",
     openVikingCollectionName: "",
     supabaseWorkspaceId: "",
@@ -77,7 +75,6 @@ function parseArgs(argv) {
     ["--sources", "sources"],
     ["--deployment", "deployment"],
     ["--from-env-file", "fromEnvFile"],
-    ["--mode", "mode"],
     ["--openviking-resource-id", "openVikingResourceId"],
     ["--openviking-collection-name", "openVikingCollectionName"],
     ["--supabase-workspace-id", "supabaseWorkspaceId"],
@@ -128,9 +125,6 @@ const options = parseArgs(process.argv.slice(2));
 if (options.help) {
   process.stdout.write(usage().trimStart());
   process.exit(0);
-}
-if (!["production", "development"].includes(options.mode)) {
-  throw new Error("--mode 只支持 production 或 development。");
 }
 if (options.applySupabase && !options.yes) {
   throw new Error("--apply-supabase 会写入目标数据库，必须同时提供 --yes。");
@@ -200,12 +194,11 @@ for (let step = 0; step < 12; step += 1) {
       run(process.execPath, [
         path.join(scripts, "configure.mjs"),
         "--from-env-file", options.fromEnvFile,
-        "--mode", options.mode,
       ]);
       continue;
     }
     if (process.stdin.isTTY && process.stdout.isTTY) {
-      run(process.execPath, [path.join(scripts, "configure.mjs"), "--mode", options.mode]);
+      run(process.execPath, [path.join(scripts, "configure.mjs")]);
       continue;
     }
     printCheckpoint(report);
@@ -260,7 +253,7 @@ for (let step = 0; step < 12; step += 1) {
       continue;
     }
     printCheckpoint(report);
-    process.stdout.write("用户知情同意少量模型与 Harness 用量后，再追加 --confirm-live 继续。\n");
+    process.stdout.write("用户知情同意少量 Agent Plan 外部能力用量后，再追加 --confirm-live 继续。\n");
     process.exit(0);
   }
 

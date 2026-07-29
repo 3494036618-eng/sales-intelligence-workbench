@@ -38,7 +38,7 @@ function usage() {
   node setup.mjs --json
 
 说明：
-  - 本命令不创建云资源、不调用模型或 Harness，也不产生 AFP。
+  - 本命令不创建云资源、不调用 Agent Plan 外部能力，也不产生 AFP。
   - 业务范围不包含密钥；密钥仍由 configure.mjs 隐藏输入。
   - sources 可选：feishu_docs、feishu_chats；暂不导入历史资料时使用 none。
 `;
@@ -149,7 +149,7 @@ function nextAction(stages, context) {
       command: `node ${paths.skillRoot}/scripts/install.mjs`,
     },
     agent_plan: {
-      reason: "模型、DataPro、豆包搜索、视觉模型和 OpenViking 控制面必须使用真实 Agent Plan 配置。",
+      reason: "模型、专业数据集（DataPro）、豆包搜索（联网搜索）和 Agent 记忆（OpenViking）控制面必须使用真实 Agent Plan 配置。",
       command: `node ${paths.skillRoot}/scripts/configure.mjs`,
     },
     supabase: {
@@ -165,7 +165,7 @@ function nextAction(stages, context) {
       command: "按 references/feishu-import.md 安装并登录 lark-cli，然后重新运行 configure.mjs。",
     },
     live_doctor: {
-      reason: "配置存在不代表真实可用，需要逐项验证模型和 Harness 数据面。",
+      reason: "配置存在不代表真实可用，需要逐项验证模型和控制台能力的数据面。",
       command: `node ${paths.skillRoot}/scripts/doctor.mjs --live`,
     },
     runtime: {
@@ -210,7 +210,7 @@ async function buildReport() {
       brief ? `${brief.workspace_name}；${brief.sales_goal}` : "尚未记录业务范围"),
     stage("app", "安装完整应用", installed ? "complete" : "pending",
       installed ? paths.installedApp : "尚未安装前后端运行时"),
-    stage("agent_plan", "配置 Agent Plan 与 Harness", planKeyReady && summary.model && summary.datapro && summary.web_search ? "complete" : "pending",
+    stage("agent_plan", "配置 Agent Plan 模型与能力卡片", planKeyReady && summary.model && summary.datapro && summary.web_search ? "complete" : "pending",
       planKeyReady ? "已配置统一 Agent Plan Key，权限待 live doctor 验证" : "尚未配置 Agent Plan Key"),
     stage("supabase", "连接 Agent Plan Supabase", summary.supabase_data_api && configuration.SUPABASE_WORKSPACE_ID ? "complete" : "pending",
       summary.supabase_data_api ? "Data API 已配置" : "尚未完成 Agent Plan Workspace 初始化"),

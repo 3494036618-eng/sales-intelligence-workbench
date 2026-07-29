@@ -33,20 +33,12 @@ function salesState() {
   };
 }
 
-const productionPolicy = Object.freeze({
-  mode: "production",
-  is_production: true,
+const strictRuntimePolicy = Object.freeze({
   fail_closed: true,
-  allow_fixture_data: false,
-  allow_provider_fallback: false,
 });
 
-const developmentPolicy = Object.freeze({
-  mode: "development",
-  is_production: false,
+const permissiveTestPolicy = Object.freeze({
   fail_closed: false,
-  allow_fixture_data: false,
-  allow_provider_fallback: false,
 });
 
 test("enqueueing a dossier persists a queued job without reserving paid capacity", async () => {
@@ -68,7 +60,7 @@ test("enqueueing a dossier persists a queued job without reserving paid capacity
   };
   const service = new SalesService({
     env: envReader({ ASYNC_JOBS_ENABLED: "true", APP_WORKSPACE_ID: "workspace-test" }),
-    runtimePolicy: productionPolicy,
+    runtimePolicy: strictRuntimePolicy,
     repository,
     paidWorkflowGuard,
   });
@@ -99,7 +91,7 @@ test("enqueueing reports a queue failure instead of returning a local-only queue
   };
   const service = new SalesService({
     env: envReader({ ASYNC_JOBS_ENABLED: "true", APP_WORKSPACE_ID: "workspace-test" }),
-    runtimePolicy: developmentPolicy,
+    runtimePolicy: permissiveTestPolicy,
     repository,
   });
 
@@ -122,7 +114,7 @@ test("API service can refresh dossier data written by a separate worker process"
   };
   const service = new SalesService({
     env: envReader({ ASYNC_JOBS_ENABLED: "true", APP_WORKSPACE_ID: "workspace-test" }),
-    runtimePolicy: productionPolicy,
+    runtimePolicy: strictRuntimePolicy,
     repository,
   });
 
@@ -304,7 +296,7 @@ test("running cancellation keeps the lease until the worker reaches a safe check
   };
   const service = new SalesService({
     env: envReader({ ASYNC_JOBS_ENABLED: "true", APP_WORKSPACE_ID: "workspace-test" }),
-    runtimePolicy: productionPolicy,
+    runtimePolicy: strictRuntimePolicy,
     repository,
   });
 

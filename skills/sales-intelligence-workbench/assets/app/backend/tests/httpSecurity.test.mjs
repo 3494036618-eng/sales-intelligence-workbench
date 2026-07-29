@@ -135,10 +135,8 @@ async function withRouter(run, options = {}) {
     authService: options.authService || authServiceStub(),
     rateLimiters: createRateLimiters(env),
     runtimePolicy: options.runtimePolicy || {
-      mode: "development",
       ready: true,
       fail_closed: false,
-      allow_legacy_demo_api: true,
       blockers: [],
     },
   });
@@ -211,10 +209,8 @@ test("asynchronous dossier routes return 202 and expose only safe task progress"
     })).status, 200);
   }, {
     runtimePolicy: {
-      mode: "production",
       ready: true,
       fail_closed: true,
-      allow_legacy_demo_api: false,
       blockers: [],
     },
     salesService: {

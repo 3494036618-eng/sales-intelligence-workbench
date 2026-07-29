@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
-import { salesSeedData } from "../fixtures/salesData.js";
 import { createEnvReader } from "../config/runtimeEnv.js";
-import { createRuntimePolicy } from "../config/runtimeMode.js";
+import { createRuntimePolicy } from "../config/runtimePolicy.js";
 import { ProviderRunStore } from "../observability/providerRunStore.js";
 import { PaidWorkflowGuard } from "../limits/paidWorkflowGuard.js";
 import { ProviderCircuitBreaker } from "../limits/providerCircuitBreaker.js";
@@ -157,7 +156,7 @@ function ensureDossierLinePunctuation(value) {
 }
 
 function normalizeDossierSectionText(value, title, maxLength = 1400) {
-  let content = normalizeImportedText(normalizeDemoText(value))
+  let content = normalizeImportedText(normalizeSalesText(value))
     .replace(/\r\n?/g, "\n")
     .replace(/[ \t]+/g, " ")
     .replace(/[ \t]*\n[ \t]*/g, "\n")
@@ -706,7 +705,7 @@ function publicSourceUrl(value) {
 
 function publicCitationView(citation, id = citation?.id) {
   const sourceKind = compactText(citation?.source_kind || "资料来源", 40);
-  const rawLabel = compactText(normalizeDemoText(citation?.label || ""), 160);
+  const rawLabel = compactText(normalizeSalesText(citation?.label || ""), 160);
   const sanitizedRawLabel = sourceKind === "联网搜索"
     ? cleanPublicEvidenceLabel(rawLabel)
     : rawLabel;
@@ -786,7 +785,7 @@ function hasBadDisplayText(value) {
 }
 
 function cleanEvidenceSummary(value, fallback = "", maxLength = 420) {
-  const text = compactText(normalizeDemoText(value), maxLength);
+  const text = compactText(normalizeSalesText(value), maxLength);
   if (!text || hasBadDisplayText(text)) return fallback;
   return text;
 }
@@ -1113,7 +1112,7 @@ function isOpenVikingOverviewItem(item) {
 }
 
 function sanitizeQaDisplayText(value) {
-  const normalized = normalizeDemoText(value);
+  const normalized = normalizeSalesText(value);
   const containsInternalImplementation = /(?:viking|openviking):\/\//i.test(normalized)
     || /\/materials(?:\/|\b)/i.test(normalized)
     || /\b(?:company|mat|sync)_[a-z0-9_-]{8,}\b/i.test(normalized)
@@ -1184,297 +1183,6 @@ function hasLegacyGenericQaCitations(message) {
   });
 }
 
-const demoCompanyOverrides = {
-  qichen: {
-    name: "星蓝新能源科技有限公司",
-    initial: "星",
-    industry: "新能源汽车",
-    location: "苏州市",
-    tags: ["新能源汽车", "苏州市", "智能驾驶"],
-    progress: {
-      label: "需求确认中",
-      summary: "历史会议提到数据安全和私有化部署，但暂未确认预算和排期。",
-      evidence: "依据：会议纪要、已有企业档案、公开来源",
-      updated_at: "2026-06-15T10:30:00.000Z",
-    },
-  },
-  shanghai_auto: {
-    name: "曜驰智能汽车科技有限公司",
-    initial: "曜",
-    industry: "新能源汽车",
-    location: "上海市",
-    tags: ["新能源汽车", "上海市", "智能座舱"],
-    progress: {
-      label: "商务推进",
-      summary: "车主服务与售后数字化机会明确，适合推进小范围PoC。",
-      evidence: "依据：企业档案、飞书资料、公开资料更新",
-      updated_at: "2026-06-12T10:00:00.000Z",
-    },
-  },
-  future_auto: {
-    name: "云途新能源汽车有限公司",
-    initial: "云",
-    industry: "新能源汽车",
-    location: "杭州市",
-    tags: ["新能源汽车", "杭州市", "智能驾驶"],
-  },
-  lianhe_power: {
-    name: "衡源动力科技有限公司",
-    initial: "衡",
-    industry: "动力电池",
-    location: "常州市",
-    tags: ["动力电池", "新能源产业链", "常州市"],
-  },
-  lanche: {
-    name: "辰屿汽车科技有限公司",
-    initial: "辰",
-    industry: "新能源汽车",
-    location: "杭州市",
-    tags: ["新能源汽车", "杭州市", "智能座舱"],
-    progress: {
-      label: "新商机",
-      summary: "已进入目标企业池，等待获取最近档案和历史沟通资料。",
-      evidence: "依据：当前企业档案",
-      updated_at: "2026-06-15T09:30:00.000Z",
-    },
-  },
-  haichuan: {
-    name: "远澜智能汽车有限公司",
-    initial: "远",
-    industry: "新能源汽车",
-    location: "北京市",
-    tags: ["新能源汽车", "家庭智能车", "北京市"],
-    progress: {
-      label: "初步接触",
-      summary: "已有公开信息和基础企业档案，尚未形成明确采购计划。",
-      evidence: "依据：公开来源、已有企业档案",
-      updated_at: "2026-06-14T09:30:00.000Z",
-    },
-  },
-  pujiang_bank: {
-    name: "浦江商业银行股份有限公司",
-    initial: "浦",
-    industry: "银行",
-    location: "深圳市",
-    tags: ["银行", "零售金融", "深圳市"],
-  },
-  haorong_sec: {
-    name: "浩融证券股份有限公司",
-    initial: "浩",
-    industry: "证券",
-    location: "北京市",
-    tags: ["证券", "投行业务", "北京市"],
-  },
-  donghai_trust: {
-    name: "澄海信托有限公司",
-    initial: "澄",
-    industry: "信托",
-    location: "深圳市",
-    tags: ["信托", "财富管理", "深圳市"],
-  },
-  yunqi_fin: {
-    name: "云启金融科技有限公司",
-    initial: "云",
-    industry: "金融科技",
-    location: "杭州市",
-    tags: ["金融科技", "支付科技", "杭州市"],
-  },
-};
-
-const demoFeaturedMaterials = {
-  mat_shanghai_auto_001: {
-    id: "mat_shanghai_auto_001",
-    company_id: "shanghai_auto",
-    title: "曜驰智能座舱合作会议纪要",
-    summary: "飞书会议纪要显示，对方关注车主服务场景、座舱助手体验和数据安全边界，倾向先做小范围试点。",
-    source_type: "飞书会议纪要",
-    updated_at: "2026-06-14T15:20:00.000Z",
-    openviking_uri: "viking://resources/sales/yaochi/cockpit-meeting",
-  },
-  mat_shanghai_auto_002: {
-    id: "mat_shanghai_auto_002",
-    company_id: "shanghai_auto",
-    title: "曜驰客户成功方案云文档",
-    summary: "云文档记录了试点方案建议：先围绕售后服务知识库、车主运营问答和内部工单协同做验证。",
-    source_type: "云文档",
-    updated_at: "2026-06-13T19:10:00.000Z",
-    openviking_uri: "viking://resources/sales/yaochi/success-plan",
-  },
-  mat_shanghai_auto_003: {
-    id: "mat_shanghai_auto_003",
-    company_id: "shanghai_auto",
-    title: "曜驰近期沟通摘要",
-    summary: "历史沟通中已确认需要补充预算窗口、试点范围、数据权限和技术对接人。",
-    source_type: "飞书会话",
-    updated_at: "2026-06-12T11:40:00.000Z",
-    openviking_uri: "viking://resources/sales/yaochi/chat-summary",
-  },
-};
-
-const demoFeaturedQaMessages = [
-  {
-    id: "qa_shanghai_auto_001",
-    role: "user",
-    text: "下一次和曜驰沟通，应该先确认哪些问题？",
-    created_at: "2026-06-15T11:20:00.000Z",
-  },
-  {
-    id: "qa_shanghai_auto_002",
-    role: "assistant",
-    text: "建议先确认三件事：试点范围是否聚焦售后服务知识库，数据权限是否允许进入私有化环境，以及预算窗口是否能覆盖本季度试点。",
-    citations: [
-      { label: "曜驰智能座舱合作会议纪要", url: "" },
-      { label: "曜驰客户成功方案云文档", url: "" },
-    ],
-    created_at: "2026-06-15T11:21:00.000Z",
-  },
-  {
-    id: "qa_shanghai_auto_003",
-    role: "user",
-    text: "现在推进到商务前，还缺哪类资料？",
-    created_at: "2026-06-15T11:24:00.000Z",
-  },
-  {
-    id: "qa_shanghai_auto_004",
-    role: "assistant",
-    text: "当前还缺预算窗口、试点部门负责人和技术对接人信息；如果这三项补齐，就可以把下一步推进到试点方案和报价沟通。",
-    citations: [
-      { label: "曜驰近期沟通摘要", url: "" },
-      { label: "曜驰智能座舱合作会议纪要", url: "" },
-    ],
-    created_at: "2026-06-15T11:25:00.000Z",
-  },
-];
-
-const demoNewCompany = {
-  id: "xinlan_auto",
-  name: "星蓝新能源科技有限公司",
-  initial: "星",
-  industry: "新能源汽车",
-  location: "深圳市",
-  tags: ["新能源汽车", "深圳市", "动力电池", "智能座舱"],
-  progress: {
-    label: "新商机",
-    summary: "新加入目标企业，尚无历史资料，待生成最新档案。",
-    evidence: "依据：专业数据库、公开来源",
-    updated_at: "2026-06-16T09:30:00.000Z",
-  },
-  dossier_ids: [],
-  material_ids: [],
-  qa_session_id: "sales-byd-auto",
-  created_at: "2026-06-16T09:30:00.000Z",
-  updated_at: "2026-06-16T09:30:00.000Z",
-};
-
-function isNewDemoCompany(company) {
-  return /xinlan_auto|星蓝/i.test(`${company?.id || ""} ${company?.name || ""}`);
-}
-
-function isFeaturedDemoCompany(company) {
-  return /shanghai_auto|曜驰/i.test(`${company?.id || ""} ${company?.name || ""}`);
-}
-
-function demoProfessionalSources(company, limit = 2) {
-  const name = company?.name || "目标企业";
-  if (isFeaturedDemoCompany(company)) {
-    return [
-      {
-        label: "企业工商数据库",
-        summary: "曜驰智能汽车科技有限公司已纳入新能源车企销售目标池，主体信息用于校验销售跟进对象、所在区域和新能源汽车行业属性。",
-        raw_ref: "demo-datapro:yaochi:business",
-        query: "曜驰智能汽车科技有限公司 企业工商信息 新能源汽车 主体信息",
-        provider_mode: "demo",
-      },
-      {
-        label: "企业风险数据库",
-        summary: "企业风险数据库用于辅助排查曜驰相关主体的经营异常、行政处罚、司法诉讼和抽查检查记录，当前销售推进建议先做法务与数据合规复核。",
-        raw_ref: "demo-datapro:yaochi:risk",
-        query: "曜驰智能汽车科技有限公司 企业风险 经营异常 行政处罚 司法诉讼 抽查检查",
-        provider_mode: "demo",
-      },
-    ].slice(0, limit);
-  }
-  if (isNewDemoCompany(company)) {
-    return [
-      {
-        label: "企业工商数据库",
-        summary: "星蓝新能源科技有限公司已进入演示主体校验流程；演示模式仅展示字段结构，不提供真实工商事实。",
-        raw_ref: "demo-datapro:xinlan:business",
-        query: "星蓝新能源科技有限公司 企业工商信息 注册资本 经营范围 统一社会信用代码",
-        provider_mode: "demo",
-      },
-      {
-        label: "企业风险数据库",
-        summary: "星蓝新能源科技有限公司的风险卡片为演示字段结构，正式模式必须以专业数据集实际返回为准。",
-        raw_ref: "demo-datapro:xinlan:risk",
-        query: "星蓝新能源科技有限公司 企业风险 经营异常 行政处罚 司法诉讼 失信被执行 限制高消费",
-        provider_mode: "demo",
-      },
-      {
-        label: "金融数据库",
-        summary: "星蓝新能源科技有限公司的金融卡片为演示字段结构，正式模式不会生成未核验的证券或财务指标。",
-        raw_ref: "demo-datapro:xinlan:finance",
-        query: "星蓝新能源科技有限公司 金融数据 财务指标 最新报告期",
-        provider_mode: "demo",
-      },
-    ].slice(0, limit);
-  }
-  return [
-    {
-      label: "企业工商数据库",
-      summary: `${name} 已通过企业工商数据库进入主体信息校验流程，重点查看公司名称、注册资本、经营范围和登记状态等字段。`,
-      raw_ref: `demo-datapro:${company?.id || "company"}:business`,
-      query: `${name} 企业工商信息 注册资本 经营范围 统一社会信用代码`,
-      provider_mode: "demo",
-    },
-    {
-      label: "企业风险数据库",
-      summary: `${name} 已通过企业风险数据库进入风险信息校验流程，重点查看经营异常、行政处罚、司法诉讼和抽查检查等记录。`,
-      raw_ref: `demo-datapro:${company?.id || "company"}:risk`,
-      query: `${name} 经营风险 行政处罚 股权 对外投资`,
-      provider_mode: "demo",
-    },
-  ].slice(0, limit);
-}
-
-function demoPublicSources(company, limit = 2) {
-  const name = company?.name || "目标企业";
-  if (isFeaturedDemoCompany(company)) {
-    return [
-      {
-        label: "曜驰演示资料：智能座舱与车主服务升级",
-        summary: "演示资料显示，曜驰销售跟进重点从单一座舱问答扩展到车主服务知识库、补能咨询、售后工单协同和用户运营问答四类场景。",
-        url: "",
-        published_at: nowIso(),
-        provider_mode: "demo",
-      },
-      {
-        label: "曜驰演示资料：售后服务数字化",
-        summary: "售后服务方向的新增机会集中在服务顾问知识检索、门店工单总结、车主问题自动分流和试点效果复盘，适合先做小范围PoC。",
-        url: "",
-        published_at: nowIso(),
-        provider_mode: "demo",
-      },
-    ].slice(0, limit);
-  }
-  return [
-    {
-      label: "公开资料更新",
-      summary: `${name} 公开资料可用于补充近期动态，销售跟进时优先关注公告、新闻和官网信息中的业务变化。`,
-      url: "",
-      published_at: nowIso(),
-      provider_mode: "demo",
-    },
-    {
-      label: "公开资料更新",
-      summary: `${name} 公开资料可用于识别合作场景、组织变化和业务重点，辅助形成最近档案。`,
-      url: "",
-      published_at: nowIso(),
-      provider_mode: "demo",
-    },
-  ].slice(0, limit);
-}
-
 function progressLevel(label) {
   const text = String(label || "");
   if (/签约|成交|已确认|方案|推进/.test(text)) return 78;
@@ -1512,38 +1220,22 @@ function conciseProgressSummary(label, summary = "") {
   return fallback[status] || "当前进度待补充。";
 }
 
-function normalizeDemoText(value) {
-  return String(value || "")
-    .replace(/启辰汽车集团/g, "星蓝新能源科技有限公司")
-    .replace(/启辰汽车/g, "星蓝新能源科技有限公司")
-    .replace(
-      "结合历史会议资料，对方此前多次提到数据安全、私有化部署和供应商准入流程，因此本次档案更适合作为下一轮需求确认的背景材料。",
-      "专业数据集和公开来源显示，该类采购更适合作为下一轮需求确认的背景材料，重点核对预算窗口、采购节奏和技术范围。"
-    )
-    .replace(
-      "年度供应商合作公告强调智能化、数据安全和合规管理，和历史会议中提到的部署要求方向一致。",
-      "年度供应商合作公告强调智能化、数据安全和合规管理，适合作为供应商合作切入点。"
-    )
-    .replace("历史资料显示其关注", "专业数据和公开来源显示其关注");
+function normalizeSalesText(value) {
+  return String(value || "");
 }
 
 export class SalesService {
   constructor(options = {}) {
     this.env = options.env || createEnvReader();
     this.runtimePolicy = options.runtimePolicy || createRuntimePolicy({ env: this.env });
-    const initialData = options.seed !== undefined
-      ? options.seed
-      : this.runtimePolicy.allow_fixture_data
-        ? salesSeedData
-        : emptySalesData();
+    const initialData = options.seed !== undefined ? options.seed : emptySalesData();
     this.data = clone(initialData);
     this.data.jobs = this.data.jobs || {};
-    const allowRealDependencies = this.runtimePolicy.mode !== "demo";
-    this.dataProProvider = allowRealDependencies ? options.dataProProvider || null : null;
-    this.webSearchProvider = allowRealDependencies ? options.webSearchProvider || null : null;
-    this.modelProvider = allowRealDependencies ? options.modelProvider || null : null;
-    this.openVikingProvider = allowRealDependencies ? options.openVikingProvider || null : null;
-    this.repository = allowRealDependencies ? options.repository || null : null;
+    this.dataProProvider = options.dataProProvider || null;
+    this.webSearchProvider = options.webSearchProvider || null;
+    this.modelProvider = options.modelProvider || null;
+    this.openVikingProvider = options.openVikingProvider || null;
+    this.repository = options.repository || null;
     this.workspaceId = String(this.env.value("APP_WORKSPACE_ID", "local-workspace") || "local-workspace").trim();
     this.qaAutoCommitEvery = Math.max(0, Math.min(
       20,
@@ -1555,7 +1247,7 @@ export class SalesService {
     ));
     this.asyncJobsEnabled = enabled(this.env.value(
       "ASYNC_JOBS_ENABLED",
-      this.runtimePolicy.is_production ? "true" : "false",
+      "true",
     ));
     this.providerRuns = options.providerRunStore || new ProviderRunStore({
       repository: this.repository,
@@ -1563,7 +1255,7 @@ export class SalesService {
       circuitBreaker: options.providerCircuitBreaker || new ProviderCircuitBreaker({
         enabled: enabled(this.env.value(
           "PROVIDER_CIRCUIT_BREAKER_ENABLED",
-          this.runtimePolicy.is_production ? "true" : "false",
+          "true",
         )),
         failureThreshold: Number(this.env.value("PROVIDER_CIRCUIT_BREAKER_FAILURE_THRESHOLD", "5")),
         cooldownSeconds: Number(this.env.value("PROVIDER_CIRCUIT_BREAKER_COOLDOWN_SECONDS", "60")),
@@ -1576,16 +1268,9 @@ export class SalesService {
       listLocalJobs: () => Object.values(this.data.jobs || {}),
     });
     this.persistence = { enabled: false, last_error: null };
-    this.salesDemoStableMode = this.runtimePolicy.allow_fixture_data
-      && enabled(this.env.value("SALES_DEMO_STABLE_MODE", "true"));
-    this.salesProfessionalFallback = this.runtimePolicy.allow_provider_fallback
-      && enabled(this.env.value("SALES_PROFESSIONAL_DEMO_FALLBACK", "true"));
-    this.salesSkipRealDataPro = this.runtimePolicy.allow_fixture_data
-      && enabled(this.env.value("SALES_SKIP_REAL_DATAPRO", "true"));
     this.lastPersistedRefreshAt = 0;
     this.persistedRefreshPromise = null;
     this.initialization = this.loadPersistedState();
-    if (this.runtimePolicy.allow_fixture_data) this.applyDemoCompanyOverrides();
   }
 
   async loadPersistedState() {
@@ -1620,7 +1305,7 @@ export class SalesService {
 
     const refresh = this.loadPersistedState().then(() => {
       if (this.runtimePolicy.fail_closed && !this.persistence.enabled) {
-        throw providerUnavailable("supabase", "Production storage refresh failed.", {
+        throw providerUnavailable("supabase", "Persistent storage refresh failed.", {
           reason: this.persistence.last_error || "repository_refresh_failed",
         });
       }
@@ -1635,7 +1320,7 @@ export class SalesService {
   async assertRuntimeReady() {
     await this.initialization;
     if (this.runtimePolicy.fail_closed && !this.persistence.enabled) {
-      throw providerUnavailable("supabase", "Production storage is unavailable.", {
+      throw providerUnavailable("supabase", "Persistent storage is unavailable.", {
         reason: this.persistence.last_error || "repository_not_ready",
       });
     }
@@ -1651,7 +1336,7 @@ export class SalesService {
     } catch (error) {
       this.persistence.last_error = error.message;
       if (this.runtimePolicy.fail_closed) {
-        throw providerUnavailable("supabase", "Production storage write failed.", {
+        throw providerUnavailable("supabase", "Persistent storage write failed.", {
           reason: error.message || "repository_write_failed",
         });
       }
@@ -1678,7 +1363,6 @@ export class SalesService {
       id: run.id,
       operation: run.operation,
       status: run.status,
-      app_mode: run.app_mode,
       entity_type: run.entity_type || "",
       entity_id: run.entity_id || "",
       job_id: run.job_id || null,
@@ -2135,102 +1819,6 @@ export class SalesService {
     return this.providerRuns.skipStep(runId, input);
   }
 
-  applyDemoCompanyOverrides() {
-    for (const [id, override] of Object.entries(demoCompanyOverrides)) {
-      if (!this.data.companies[id]) continue;
-      this.data.companies[id] = {
-        ...this.data.companies[id],
-        ...override,
-      };
-    }
-    const autoGoal = this.data.goals.find((goal) => goal.id === "goal_auto");
-    if (autoGoal) {
-      autoGoal.company_ids = ["shanghai_auto", "qichen", "haichuan", "lanche"];
-      autoGoal.candidate_ids = ["xinlan_auto", "shanghai_auto", "qichen", "haichuan", "lanche", "future_auto", "lianhe_power"];
-    }
-    this.ensureFeaturedDemoContext();
-    this.ensureNewCompanyDemoContext();
-    this.normalizePersistedDemoRecords();
-  }
-
-  ensureFeaturedDemoContext() {
-    const company = this.data.companies.shanghai_auto;
-    if (!company) return;
-    this.data.materials = this.data.materials || {};
-    for (const [id, material] of Object.entries(demoFeaturedMaterials)) {
-      this.data.materials[id] = {
-        ...(this.data.materials[id] || {}),
-        ...material,
-      };
-    }
-    company.material_ids = Object.keys(demoFeaturedMaterials);
-    this.data.qa_messages = this.data.qa_messages || {};
-    this.data.qa_messages.shanghai_auto = demoFeaturedQaMessages.map((message) => clone(message));
-  }
-
-  ensureNewCompanyDemoContext() {
-    this.data.companies.xinlan_auto = {
-      ...demoNewCompany,
-      ...(this.data.companies.xinlan_auto || {}),
-      ...demoNewCompany,
-    };
-    const company = this.data.companies.xinlan_auto;
-    company.material_ids = [];
-    this.data.qa_messages = this.data.qa_messages || {};
-    this.data.qa_messages.xinlan_auto = [];
-  }
-
-  normalizePersistedDemoRecords() {
-    for (const dossier of Object.values(this.data.dossiers || {})) {
-      if (dossier?.company_id !== "qichen") continue;
-      dossier.title = normalizeDemoText(dossier.title);
-      dossier.summary = normalizeDemoText(dossier.summary);
-      dossier.memory_summary = normalizeDemoText(dossier.memory_summary);
-
-      const keptCitations = firstJsonArray(dossier.citations)
-        .filter((citation) => !/OpenViking|历史资料/.test(`${citation.source_kind || ""}${citation.label || ""}`))
-        .sort((a, b) => citationRank(a) - citationRank(b));
-      const idMap = new Map();
-      dossier.citations = keptCitations.map((citation, index) => {
-        const nextId = String(index + 1);
-        idMap.set(String(citation.id), nextId);
-        return {
-          ...citation,
-          id: nextId,
-          label: normalizeDemoText(citation.label),
-          url: isPlaceholderUrl(citation.url) ? "" : citation.url,
-        };
-      });
-
-      dossier.body = firstJsonArray(dossier.body).map((paragraph, index) => {
-        const citationIds = firstJsonArray(paragraph.citation_ids)
-          .map((id) => idMap.get(String(id)))
-          .filter(Boolean);
-        return {
-          ...paragraph,
-          text: normalizeDemoText(paragraph.text),
-          citation_ids: citationIds.length ? citationIds : dossier.citations.slice(0, index ? 2 : 1).map((item) => item.id),
-        };
-      });
-    }
-
-    for (const material of Object.values(this.data.materials || {})) {
-      if (material?.company_id !== "qichen") continue;
-      material.title = normalizeDemoText(material.title);
-      material.summary = normalizeDemoText(material.summary);
-      material.text = normalizeDemoText(material.text);
-    }
-
-    for (const message of this.data.qa_messages?.qichen || []) {
-      message.text = normalizeDemoText(message.text);
-      message.citations = firstJsonArray(message.citations).map((citation) => ({
-        ...citation,
-        label: normalizeDemoText(citation.label),
-        url: isPlaceholderUrl(citation.url) ? "" : citation.url,
-      }));
-    }
-  }
-
   listGoals() {
     return this.data.goals.map((goal) => this.goalView(goal));
   }
@@ -2405,7 +1993,6 @@ export class SalesService {
     try {
       run = await this.providerRuns.startRun({
         operation: "sales_company_search",
-        app_mode: this.runtimePolicy.mode,
         entity_type: "sales_goal",
         entity_id: goal.id,
         job_id: job.id,
@@ -2491,10 +2078,7 @@ export class SalesService {
   }
 
   defaultCandidateIds(goal) {
-    const seeded = this.runtimePolicy.allow_fixture_data
-      ? salesSeedData.goals.find((item) => item.id === goal.id)
-      : null;
-    return seeded?.candidate_ids?.length ? [...seeded.candidate_ids] : [...(goal.candidate_ids || [])];
+    return [...(goal.candidate_ids || [])];
   }
 
   defaultCandidateCompanies(goal) {
@@ -2641,16 +2225,7 @@ export class SalesService {
     };
     if (!query) return result;
 
-    if (this.salesSkipRealDataPro || this.salesDemoStableMode) {
-      result.professional = demoProfessionalSources({ id: "search", name: query, industry: "目标行业", location: "目标区域" }, 1)[0];
-      result.summary = "已按企业名称完成候选匹配，可生成最新企业档案。";
-      await this.trackProviderStep(providerRunId, {
-        provider: "fixture",
-        operation: "search_company_professional_data",
-        input_summary: `为 ${query} 读取演示候选企业资料`,
-        output_summary: "已读取演示候选企业资料。",
-      }, async () => ({ ok: true, provider: "fixture", provider_mode: "mock" }));
-    } else if (this.dataProProvider?.isRunEnabled?.()) {
+    if (this.dataProProvider?.isRunEnabled?.()) {
       try {
         const dataPro = await this.trackProviderStep(providerRunId, {
           provider: "datapro",
@@ -2677,20 +2252,7 @@ export class SalesService {
       });
     }
 
-    if (!result.professional && this.salesProfessionalFallback) {
-      result.professional = demoProfessionalSources({ id: "search", name: query, industry: "目标行业", location: "目标区域" }, 1)[0];
-      result.summary = result.summary || "已按企业名称完成候选匹配，可生成最新企业档案。";
-    }
-
-    if (this.salesDemoStableMode) {
-      result.public_sources = demoPublicSources({
-        id: "search",
-        name: query,
-        industry: "目标行业",
-        location: "目标区域",
-      }, 1);
-      result.summary = result.summary || "已读取演示公开资料完成候选匹配。";
-    } else if (this.webSearchProvider?.isRunEnabled?.()) {
+    if (this.webSearchProvider?.isRunEnabled?.()) {
       try {
         const web = await this.trackProviderStep(providerRunId, {
           provider: "web_search",
@@ -2799,7 +2361,7 @@ export class SalesService {
   }
 
   publicDossier(dossier) {
-    const summary = normalizeDemoText(
+    const summary = normalizeSalesText(
       businessText(dossier.summary, "这份档案需要重新获取最新资料后再展示。", 300),
     );
     const storedCompany = this.data.companies[dossier.company_id];
@@ -2850,7 +2412,7 @@ export class SalesService {
       return publicCitationView(citation, id);
     });
     const body = firstJsonArray(dossier.body).map((paragraph) => ({
-      text: normalizeDemoText(businessText(paragraph.text, summary, 500)),
+      text: normalizeSalesText(businessText(paragraph.text, summary, 500)),
       citation_ids: firstJsonArray(paragraph.citation_ids)
         .map((id) => citationIdMap.get(String(id)))
         .filter(Boolean),
@@ -2924,7 +2486,6 @@ export class SalesService {
       await reportProgress("collecting_evidence", 8);
       run = await this.providerRuns.startRun({
         operation: "sales_dossier_generation",
-        app_mode: this.runtimePolicy.mode,
         entity_type: "target_enterprise",
         entity_id: company.id,
         job_id: job.id,
@@ -3007,7 +2568,7 @@ export class SalesService {
         }, async () => ({
           ok: true,
           provider: "rule",
-          provider_mode: this.runtimePolicy.mode === "demo" ? "mock" : "mixed",
+          provider_mode: "mixed",
           dossier: this.buildRuleDossier(company, evidencePack, []),
         }));
         dossier = ruleResult.dossier;
@@ -3054,7 +2615,7 @@ export class SalesService {
           provider: "supabase",
           operation: "persist_dossier",
           input_summary: `保存 ${company.name} 的档案和进度`,
-          output_summary: "当前运行模式未启用持久化仓库。",
+          output_summary: "当前配置未启用持久化仓库。",
           error: { code: "repository_disabled", message: "Persistent repository is not enabled." },
         });
       }
@@ -3107,15 +2668,7 @@ export class SalesService {
     const professionalFailures = [];
     const publicFailures = [];
 
-    if (this.salesSkipRealDataPro || this.salesDemoStableMode) {
-      professional.push(...demoProfessionalSources(company, isNewDemoCompany(company) ? 3 : 2));
-      await this.trackProviderStep(providerRunId, {
-        provider: "fixture",
-        operation: "collect_professional_evidence",
-        input_summary: `为 ${company.name} 读取演示专业资料`,
-        output_summary: `已读取 ${professional.length} 条演示专业资料。`,
-      }, async () => ({ ok: true, provider: "fixture", provider_mode: "mock" }));
-    } else if (this.dataProProvider?.isRunEnabled?.()) {
+    if (this.dataProProvider?.isRunEnabled?.()) {
       const maxProfessionalSources = Math.max(1, Math.min(Number(this.dataProProvider.maxSources || 3), 5));
       const dataProQueries = this.dataProProvider.planDossierQueries?.(company, {
         maxSources: maxProfessionalSources,
@@ -3172,16 +2725,6 @@ export class SalesService {
         output_summary: "DataPro 未启用。",
         error: { code: "provider_disabled", message: "DataPro is not enabled." },
       });
-    }
-
-    if (!professional.length && this.salesProfessionalFallback) {
-      professional.push(...demoProfessionalSources(company, isNewDemoCompany(company) ? 3 : 2));
-      await this.trackProviderStep(providerRunId, {
-        provider: "fixture",
-        operation: "fallback_professional_evidence",
-        input_summary: `为 ${company.name} 使用演示专业资料兜底`,
-        output_summary: `已读取 ${professional.length} 条演示专业资料。`,
-      }, async () => ({ ok: true, provider: "fixture", provider_mode: "mock" }));
     }
 
     if (this.webSearchProvider?.isRunEnabled?.()) {
@@ -3267,16 +2810,6 @@ export class SalesService {
       });
     }
 
-    if (!publicSources.length && this.salesProfessionalFallback && !isNewDemoCompany(company)) {
-      publicSources.push(...demoPublicSources(company, isFeaturedDemoCompany(company) ? 2 : 1));
-      await this.trackProviderStep(providerRunId, {
-        provider: "fixture",
-        operation: "fallback_public_evidence",
-        input_summary: `为 ${company.name} 使用演示公开资料兜底`,
-        output_summary: `已读取 ${publicSources.length} 条演示公开资料。`,
-      }, async () => ({ ok: true, provider: "fixture", provider_mode: "mock" }));
-    }
-
     if (this.runtimePolicy.fail_closed && !professional.length) {
       throw providerUnavailable("datapro", "No verified professional evidence was returned for the dossier.", {
         issues,
@@ -3294,12 +2827,11 @@ export class SalesService {
   }
 
   async searchOpenViking(company, query) {
-    const fixtureContexts = this.runtimePolicy.allow_fixture_data ? this.materialContexts(company) : [];
     if (!this.openVikingProvider?.isConfigured?.()) {
       if (this.runtimePolicy.fail_closed) {
-        throw providerUnavailable("openviking", "OpenViking is not configured for production retrieval.");
+        throw providerUnavailable("openviking", "OpenViking is not configured for retrieval.");
       }
-      return fixtureContexts;
+      return [];
     }
     try {
       const result = await this.openVikingProvider.findMemories(query, {
@@ -3312,11 +2844,10 @@ export class SalesService {
             reason: result.error?.code || "provider_error",
           });
         }
-        return fixtureContexts;
+        return [];
       }
       const contexts = this.normalizeOpenVikingContexts(result.result, company);
-      if (contexts.length) return contexts;
-      return fixtureContexts;
+      return contexts;
     } catch (error) {
       if (this.runtimePolicy.fail_closed) {
         if (error instanceof HttpError) throw error;
@@ -3324,7 +2855,7 @@ export class SalesService {
           reason: error.message || "provider_error",
         });
       }
-      return fixtureContexts;
+      return [];
     }
   }
 
@@ -3455,7 +2986,7 @@ export class SalesService {
         error: { code: "provider_disabled", message: "Model provider is not enabled." },
       });
       if (this.runtimePolicy.fail_closed) {
-        throw providerUnavailable("model", "The production model provider is not enabled.");
+        throw providerUnavailable("model", "The model provider is not enabled.");
       }
       return null;
     }
@@ -3799,9 +3330,7 @@ export class SalesService {
       id: makeId("dossier"),
       company_id: company.id,
       title: `${company.name} 销售情报报告`,
-      summary: isNewDemoCompany(company)
-        ? compactText(structuredSummary, 180)
-        : cleanEvidenceSummary(parsed.summary, structuredSummary, 180),
+      summary: cleanEvidenceSummary(parsed.summary, structuredSummary, 180),
       created_at: now,
       body: structuredBody,
       citations: citationInputs,
@@ -4071,61 +3600,6 @@ export class SalesService {
     const allIds = citations.map((item) => item.id);
     const professionalSources = citations.filter((item) => item.source_kind === "专业数据集");
     const webSources = citations.filter((item) => item.source_kind === "联网搜索");
-    const usesDemoProfessional = professionalSources.some((source) => source.provider_mode === "demo" || String(source.raw_ref || "").startsWith("demo-datapro:"));
-    const usesDemoPublic = webSources.some((source) => source.provider_mode === "demo");
-    if (isFeaturedDemoCompany(company) && citations.some((source) => source.provider_mode === "demo")) {
-      const businessId = professionalSources.find((source) => source.label === "企业工商数据库")?.id;
-      const riskId = professionalSources.find((source) => source.label === "企业风险数据库")?.id;
-      const serviceId = webSources.find((source) => /智能座舱|车主服务/.test(source.label))?.id;
-      const afterSalesId = webSources.find((source) => /售后服务/.test(source.label))?.id || serviceId;
-      return [
-        {
-          text: "企业情况：曜驰智能汽车科技有限公司已在演示目标企业池中，资料显示对方关注车主服务场景、座舱助手体验和数据安全边界，适合以客户成功和售后服务数字化作为切入点。",
-          citation_ids: [businessId, serviceId].filter(Boolean),
-        },
-        {
-          text: "近期动态：演示资料显示，曜驰的跟进机会已从单一智能座舱问答扩展到车主服务知识库、补能咨询、售后工单协同和用户运营问答四类场景。",
-          citation_ids: [serviceId, afterSalesId].filter(Boolean),
-        },
-        {
-          text: "销售判断：当前最适合推进小范围PoC，先围绕服务顾问知识检索、门店工单总结、车主问题自动分流和试点效果复盘验证价值，而不是直接进入大规模采购谈判。",
-          citation_ids: [serviceId, afterSalesId, businessId].filter(Boolean),
-        },
-        {
-          text: "下一步建议：录入下一轮沟通任务时优先确认试点部门负责人、车主服务知识库范围、数据权限边界、换电补能咨询场景和预算窗口，同时让法务复核企业风险数据库中的经营与诉讼记录。",
-          citation_ids: [riskId, serviceId].filter(Boolean),
-        },
-      ].map((item) => ({
-        text: cleanEvidenceSummary(item.text, item.text, 520),
-        citation_ids: item.citation_ids.filter((id) => allIds.includes(id)),
-      }));
-    }
-    if (isNewDemoCompany(company) && professionalSources.some((source) => source.provider_mode === "demo")) {
-      const businessId = professionalSources.find((source) => source.label === "企业工商数据库")?.id;
-      const riskId = professionalSources.find((source) => source.label === "企业风险数据库")?.id;
-      const financeId = professionalSources.find((source) => source.label === "金融数据库")?.id;
-      return [
-        {
-          text: "企业情况：星蓝新能源科技有限公司是显式演示模式中的虚构企业，卡片仅用于展示专业数据字段和引用结构。",
-          citation_ids: [businessId].filter(Boolean),
-        },
-        {
-          text: "近期动态：当前为新加入企业，尚未生成历史档案，也没有可展示的内部沟通资料。",
-          citation_ids: [financeId].filter(Boolean),
-        },
-        {
-          text: "销售判断：演示流程将从专业数据字段、公开信息和后续导入资料中逐步形成判断；正式模式不会使用这段演示内容。",
-          citation_ids: [businessId, financeId].filter(Boolean),
-        },
-        {
-          text: "下一步建议：先生成第一版档案，再导入获得授权的飞书会话、会议纪要或云文档资料，用真实证据补充对接部门、试点场景和预算窗口。",
-          citation_ids: [riskId, businessId].filter(Boolean),
-        },
-      ].map((item) => ({
-        text: cleanEvidenceSummary(item.text, item.text, 520),
-        citation_ids: item.citation_ids.filter((id) => allIds.includes(id)),
-      }));
-    }
     const firstProfessional = professionalSources[0];
     const webPoints = webSources
       .slice(0, 3)
@@ -4138,9 +3612,7 @@ export class SalesService {
     const preferredCompanyText = preferredBody.find((item) => /^企业情况：/.test(item.text))?.text;
     const preferredCompanyIds = firstJsonArray(preferredBody.find((item) => /^企业情况：/.test(item.text))?.citation_ids)
       .filter((id) => professionalIds.includes(id) || webIds.includes(id));
-    const companyText = usesDemoProfessional
-      ? `企业情况：专业数据库已返回企业主体和风险校验信息，可作为目标企业建档依据。`
-      : firstProfessional
+    const companyText = firstProfessional
       ? (preferredCompanyText && !isWeakCompanySituationText(preferredCompanyText)
         ? preferredCompanyText
         : `企业情况：专业数据库显示：${professionalPoints.join("；") || `${company.name} 的可引用企业信息`}。`)
@@ -4148,21 +3620,15 @@ export class SalesService {
     const preferredLatestText = preferredBody.find((item) => /^近期动态：/.test(item.text))?.text;
     const preferredLatestIds = firstJsonArray(preferredBody.find((item) => /^近期动态：/.test(item.text))?.citation_ids)
       .filter((id) => professionalIds.includes(id) || webIds.includes(id));
-    const latestText = usesDemoPublic
-      ? `近期动态：公开资料已补充企业近期信息，可用于销售跟进前的业务背景梳理。`
-      : (preferredLatestText && !isOverlongLatestText(preferredLatestText) ? preferredLatestText : "")
+    const latestText = (preferredLatestText && !isOverlongLatestText(preferredLatestText) ? preferredLatestText : "")
       || (webPoints.length
         ? `近期动态：联网搜索返回 ${webPoints.length} 条可引用公开来源，主要提到：${webPoints.join("；")}。`
         : "近期动态：联网搜索暂未返回可引用的新公告、新闻或招投标摘要。");
-    const judgmentText = usesDemoProfessional || usesDemoPublic
-      ? `销售判断：当前企业已具备主体信息、风险校验和公开资料线索，适合进入目标企业池并继续补充销售触点。`
-      : professionalIds.length
+    const judgmentText = professionalIds.length
       ? (preferredBody.find((item) => /^销售判断：/.test(item.text))?.text
         || `销售判断：专业数据库可用于核验企业主体事实，联网搜索补充近期公开动态；当前信息适合作为下一轮销售沟通前的背景材料。`)
       : `销售判断：本次只能依据联网搜索判断公开动态，缺少专业数据库的工商/风险核验，销售推进判断应保持谨慎。`;
-    const nextText = usesDemoProfessional || usesDemoPublic
-      ? `下一步建议：结合主体信息、风险记录和公开动态，继续确认对接部门、业务场景、预算窗口和数据合规要求。`
-      : preferredBody.find((item) => /^下一步建议：/.test(item.text))?.text
+    const nextText = preferredBody.find((item) => /^下一步建议：/.test(item.text))?.text
       || (professionalIds.length
         ? `下一步建议：结合专业数据库核验结果和公开动态，继续确认预算窗口、采购节奏、供应商准入和数据合规要求。`
         : `下一步建议：优先补齐专业数据库权限，再围绕预算窗口、采购节奏、供应商准入和数据合规要求继续确认。`);
@@ -4307,7 +3773,7 @@ export class SalesService {
         error: { code: "provider_disabled", message: "OpenViking writes are not enabled." },
       });
       if (this.runtimePolicy.fail_closed) {
-        throw providerUnavailable("openviking", "OpenViking writes are not enabled in production.");
+        throw providerUnavailable("openviking", "OpenViking writes are not enabled.");
       }
       return { status: "skipped", summary: "OpenViking 写入未启用。" };
     }
@@ -4370,8 +3836,8 @@ export class SalesService {
     const company = this.requireCompany(companyId);
     return (company.material_ids || []).map((id) => this.data.materials[id]).filter(Boolean).map((material) => ({
       id: material.id,
-      title: compactText(normalizeDemoText(material.title), 120),
-      summary: compactText(normalizeDemoText(material.summary || ""), 280),
+      title: compactText(normalizeSalesText(material.title), 120),
+      summary: compactText(normalizeSalesText(material.summary || ""), 280),
       source_type: compactText(material.source_type || "", 24),
       source_url: publicSourceUrl(material.source_url),
       source_id: material.source_id || null,
@@ -4579,7 +4045,6 @@ export class SalesService {
     try {
       run = await this.providerRuns.startRun({
         operation: "feishu_material_import",
-        app_mode: this.runtimePolicy.mode,
         entity_type: "target_enterprise",
         entity_id: company.id,
         job_id: job.id,
@@ -4814,7 +4279,6 @@ export class SalesService {
     try {
       run = await this.providerRuns.startRun({
         operation: "material_sync_source_delete",
-        app_mode: this.runtimePolicy.mode,
         entity_type: "sync_source",
         entity_id: identity.source_id,
         job_id: job.id,
@@ -4849,7 +4313,7 @@ export class SalesService {
               error: { code: "provider_disabled", message: "OpenViking resource removal is not enabled." },
             });
             if (this.runtimePolicy.fail_closed) {
-              throw providerUnavailable("openviking", "OpenViking material deletion is not enabled in production.");
+              throw providerUnavailable("openviking", "OpenViking material deletion is not enabled.");
             }
             warnings.push(`OpenViking 未启用，资源可能仍需人工清理：${material.openviking_uri}`);
           }
@@ -4919,7 +4383,7 @@ export class SalesService {
     }
     if (!this.openVikingProvider?.isRunEnabled?.()) {
       if (this.runtimePolicy.fail_closed) {
-        throw providerUnavailable("openviking", "OpenViking writes are not enabled in production.");
+        throw providerUnavailable("openviking", "OpenViking writes are not enabled.");
       }
       return {
         status: "skipped",
@@ -4946,7 +4410,6 @@ export class SalesService {
       await reportProgress("syncing_materials", 8);
       run = await this.providerRuns.startRun({
         operation: "material_openviking_sync",
-        app_mode: this.runtimePolicy.mode,
         entity_type: "target_enterprise",
         entity_id: company.id,
         job_id: job.id,
@@ -5070,7 +4533,7 @@ export class SalesService {
   async writeMaterialToOpenViking(company, material, options = {}) {
     if (!this.openVikingProvider?.isRunEnabled?.()) {
       if (this.runtimePolicy.fail_closed) {
-        throw providerUnavailable("openviking", "OpenViking writes are not enabled in production.");
+        throw providerUnavailable("openviking", "OpenViking writes are not enabled.");
       }
       return {
         material_id: material.id,
@@ -5292,7 +4755,7 @@ export class SalesService {
   }
 
   publicQaMessage(message) {
-    const displayText = message.role === "assistant" ? sanitizeQaDisplayText : normalizeDemoText;
+    const displayText = message.role === "assistant" ? sanitizeQaDisplayText : normalizeSalesText;
     const displaySources = mergeQaDisplayCitations(message);
     return {
       id: message.id,
@@ -5326,7 +4789,6 @@ export class SalesService {
     try {
       run = await this.providerRuns.startRun({
         operation: "sales_qa",
-        app_mode: this.runtimePolicy.mode,
         entity_type: "target_enterprise",
         entity_id: company.id,
         job_id: job.id,
@@ -5480,7 +4942,7 @@ export class SalesService {
           provider: "supabase",
           operation: "persist_qa_session_metadata",
           input_summary: `保存 ${company.name} 的会话索引`,
-          output_summary: "当前运行模式未启用持久化仓库。",
+          output_summary: "当前配置未启用持久化仓库。",
           error: { code: "repository_disabled", message: "Persistent repository is not enabled." },
         });
       }
@@ -5706,7 +5168,7 @@ export class SalesService {
             };
           }
         } else if (this.runtimePolicy.fail_closed) {
-          throw providerUnavailable("model", "The production model provider did not return a valid answer.", {
+          throw providerUnavailable("model", "The model provider did not return a valid answer.", {
             reason: result.error?.code || "provider_error",
           });
         }
@@ -5731,7 +5193,7 @@ export class SalesService {
     }
 
     if (this.runtimePolicy.fail_closed) {
-      throw providerUnavailable("model", "The production model provider did not return an answer.");
+      throw providerUnavailable("model", "The model provider did not return an answer.");
     }
 
     const hasMaterials = (company.material_ids || []).length > 0;
@@ -5765,7 +5227,7 @@ export class SalesService {
   async captureQaSession(company, userMessage, assistantMessage, contexts) {
     if (!this.openVikingProvider?.isRunEnabled?.()) {
       if (this.runtimePolicy.fail_closed) {
-        throw providerUnavailable("openviking", "OpenViking session capture is not enabled in production.");
+        throw providerUnavailable("openviking", "OpenViking session capture is not enabled.");
       }
       return null;
     }
@@ -5810,7 +5272,7 @@ export class SalesService {
     const company = this.requireCompany(companyId);
     if (!this.openVikingProvider?.isRunEnabled?.()) {
       if (this.runtimePolicy.fail_closed) {
-        throw providerUnavailable("openviking", "OpenViking session commit is not enabled in production.");
+        throw providerUnavailable("openviking", "OpenViking session commit is not enabled.");
       }
       return { status: "skipped", summary: "OpenViking 写入未启用。" };
     }
@@ -5826,7 +5288,6 @@ export class SalesService {
     try {
       run = await this.providerRuns.startRun({
         operation: "qa_memory_commit",
-        app_mode: this.runtimePolicy.mode,
         entity_type: "target_enterprise",
         entity_id: company.id,
         job_id: job.id,

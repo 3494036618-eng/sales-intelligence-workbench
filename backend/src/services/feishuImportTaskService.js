@@ -90,14 +90,13 @@ function publicTask(task) {
 export class FeishuImportTaskService {
   constructor(options = {}) {
     this.env = options.env;
-    this.runtimePolicy = options.runtimePolicy || { mode: "development", is_demo: false };
     this.salesService = options.salesService;
     this.runner = options.runner || runFeishuImport;
     this.tasks = new Map();
     this.enabled = enabledValue(
       this.env?.value?.("FEISHU_CLI_IMPORT_ENABLED", "")
         || this.env?.value?.("FEISHU_SYNC_ENABLED", ""),
-      this.runtimePolicy.mode !== "production" && !this.runtimePolicy.is_demo,
+      false,
     );
     this.maxTasks = Math.max(20, Number(this.env?.value?.("FEISHU_CLI_IMPORT_TASK_LIMIT", "100")) || 100);
   }

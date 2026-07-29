@@ -303,7 +303,7 @@ export class AuthService {
     if (!this.authEnabled) {
       return {
         principal: Object.freeze({
-          id: "local-development",
+          id: "auth-disabled-diagnostic",
           email: "",
           display_name: "本地开发者",
           workspace_id: this.workspaceId,
@@ -401,7 +401,7 @@ export class AuthService {
   }
 
   async requestPasswordRecovery(body) {
-    if (!this.authEnabled) throw new HttpError(409, "auth_disabled", "当前运行模式未启用登录。");
+    if (!this.authEnabled) throw new HttpError(409, "auth_disabled", "当前配置未启用登录。");
     const email = validateEmail(body?.email);
     const redirect = this.authRedirectUrl ? `?redirect_to=${encodeURIComponent(this.authRedirectUrl)}` : "";
     await this.authRequest(`recover${redirect}`, {
@@ -413,7 +413,7 @@ export class AuthService {
   }
 
   async updatePassword(body, req, res) {
-    if (!this.authEnabled) throw new HttpError(409, "auth_disabled", "当前运行模式未启用登录。");
+    if (!this.authEnabled) throw new HttpError(409, "auth_disabled", "当前配置未启用登录。");
     const password = validatePassword(body?.password);
     const authorization = String(req.headers?.authorization || "");
     const accessToken = authorization.match(/^Bearer\s+(.+)$/i)?.[1]?.trim() || "";
@@ -479,7 +479,7 @@ export class AuthService {
   }
 
   async login(body, res) {
-    if (!this.authEnabled) throw new HttpError(409, "auth_disabled", "当前运行模式未启用登录。");
+    if (!this.authEnabled) throw new HttpError(409, "auth_disabled", "当前配置未启用登录。");
     const { email, password } = validateCredentials(body);
     const session = await this.passwordSession(email, password);
     const csrfToken = this.setSessionCookies(res, session);
@@ -501,13 +501,13 @@ export class AuthService {
   }
 
   async cliLogin(body) {
-    if (!this.authEnabled) throw new HttpError(409, "auth_disabled", "当前运行模式未启用登录。");
+    if (!this.authEnabled) throw new HttpError(409, "auth_disabled", "当前配置未启用登录。");
     const { email, password } = validateCredentials(body);
     return this.cliSessionPayload(await this.passwordSession(email, password));
   }
 
   async cliRefresh(body) {
-    if (!this.authEnabled) throw new HttpError(409, "auth_disabled", "当前运行模式未启用登录。");
+    if (!this.authEnabled) throw new HttpError(409, "auth_disabled", "当前配置未启用登录。");
     const refreshToken = String(body?.refresh_token || "").trim();
     if (!refreshToken || refreshToken.length > 4096) {
       throw new HttpError(401, "authentication_required", "CLI 登录会话已过期，请重新登录。");
@@ -575,7 +575,7 @@ export class AuthService {
   }
 
   async refresh(req, res) {
-    if (!this.authEnabled) throw new HttpError(409, "auth_disabled", "当前运行模式未启用登录。");
+    if (!this.authEnabled) throw new HttpError(409, "auth_disabled", "当前配置未启用登录。");
     const cookies = parseCookies(req.headers?.cookie);
     const session = await this.refreshSession(cookies[this.cookieNames.refresh]);
     const csrfToken = this.setSessionCookies(res, session, cookies[this.cookieNames.csrf] || undefined);

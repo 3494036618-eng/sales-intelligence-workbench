@@ -1,6 +1,6 @@
 # 单工作区自托管部署
 
-本文说明 `0.9.0` Beta 的支持边界和推荐部署方式。当前版本仅支持单工作区、单人使用，以及本机或受控内网自托管；不提供公网生产 SaaS、多人协作或 SLA。公网开放前必须完成正式域名、HTTPS、邮件服务和真实链路验收。
+本文说明 `0.9.1` Beta 的支持边界和推荐部署方式。当前版本仅支持单工作区、单人使用，以及本机或受控内网自托管；不提供公网生产 SaaS、多人协作或 SLA。公网开放前必须完成正式域名、HTTPS、邮件服务和真实链路验收。
 
 ## 1. 进程与网络边界
 
@@ -23,7 +23,6 @@
 公网反向代理至少需要在 `runtime.env` 中设置：
 
 ```dotenv
-APP_MODE="production"
 HOST="127.0.0.1"
 PORT="8787"
 HTTP_AUTH_ENABLED="true"
@@ -38,7 +37,7 @@ PROVIDER_CIRCUIT_BREAKER_FAILURE_THRESHOLD="5"
 PROVIDER_CIRCUIT_BREAKER_COOLDOWN_SECONDS="60"
 ```
 
-`AUTH_REDIRECT_URL` 还必须原样加入 Supabase Auth 的 Redirect URLs。生产模式会拒绝非 HTTPS 的代理回跳地址、非 HTTPS 来源以及与回跳域名不一致的来源配置。
+`AUTH_REDIRECT_URL` 还必须原样加入 Supabase Auth 的 Redirect URLs。工作台会拒绝非 HTTPS 的代理回跳地址、非 HTTPS 来源以及与回跳域名不一致的来源配置。
 
 ## 3. Nginx 示例
 

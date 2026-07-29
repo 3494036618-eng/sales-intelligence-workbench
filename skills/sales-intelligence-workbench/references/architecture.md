@@ -6,36 +6,34 @@
      -> frontend 静态文件
      -> /api 路由
         -> SalesService
-           -> Supabase 持久化任务队列
+           -> AI Native 应用开发底座（Supabase）持久化任务队列
 独立 Worker
   -> 原子领取 / 租约 / 心跳
-  -> DataPro / 联网搜索 / 模型
-  -> Supabase Data API Repository
+  -> 专业数据集（DataPro）/ 豆包搜索（联网搜索）/ Agent Plan 模型
+  -> AI Native 应用开发底座（Supabase）Data API Repository
 
 Codex CLI / 前端导入入口
   -> 飞书 CLI
-  -> OpenViking 资料正文
-  -> Supabase 同步元数据
+  -> Agent 记忆（OpenViking）资料正文
+  -> AI Native 应用开发底座（Supabase）同步元数据
 
 资料问答
-  -> Supabase 当前档案
-  -> OpenViking 资料召回 / Session / 长期记忆
+  -> AI Native 应用开发底座（Supabase）当前档案
+  -> Agent 记忆（OpenViking）资料召回 / Session / 长期记忆
 ```
 
 ## 核心边界
 
-- Supabase 是业务事实库：企业、目标、档案版本、公开引用、同步源、资料/会话索引、Job、Provider Run、权限和审计持久化在这里。
-- OpenViking 是飞书资料正文、资料问答 Session 和长期记忆的唯一内容存储；它不代替 Supabase 的关系型业务状态。
-- DataPro 提供企业主体和专业数据候选；联网搜索提供公开来源候选。
-- 最新档案只允许模型使用 DataPro 与联网搜索的已校验证据；问答只允许使用当前档案和 OpenViking 召回的企业内部资料。
+- AI Native 应用开发底座（Supabase）是业务事实库：企业、目标、档案版本、公开引用、同步源、资料/会话索引、Job、Provider Run、权限和审计持久化在这里。
+- Agent 记忆（OpenViking）是飞书资料正文、资料问答 Session 和长期记忆的唯一内容存储；它不代替 Supabase 的关系型业务状态。
+- 专业数据集（DataPro）提供企业主体和专业数据候选；豆包搜索（联网搜索）提供公开来源候选。
+- 最新档案只允许模型使用 DataPro 与豆包搜索的已校验证据；问答只允许使用当前档案和 OpenViking 召回的企业内部资料。
 - 飞书 CLI 使用当前用户授权读取云文档和消息；后端负责幂等导入、增量游标、企业归属和 OpenViking 写入。
 - 前端只显示后端状态，不保存最终业务事实，也不持有任何 Provider 密钥。
 
-## 运行模式
+## 运行边界
 
-- `production`：真实 Provider 和 Supabase 必须完整，失败关闭业务接口。
-- `development`：用于接线和排错，仍不允许用固定数据伪装真实结果。
-- `demo`：仅供隔离录屏，不属于该正式 Skill 的配置范围。
+项目只有一种运行方式：真实 Provider 和 Supabase 必须完整，缺少配置或依赖失败时关闭对应业务操作。自动化测试可以显式注入测试数据和替身 Provider，但这些能力不进入应用配置、用户界面或发行资产。
 
 ## API 与 Worker
 

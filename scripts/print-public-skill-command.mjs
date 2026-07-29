@@ -20,11 +20,13 @@ function usage() {
 用法：
   node scripts/print-public-skill-command.mjs \\
     --repository https://github.com/<owner>/<repo> \\
-    --ref v${packageJson.version}
+    --ref v${packageJson.version} \\
+    [--skill-path skills/sales-intelligence-workbench/SKILL.md]
 
 说明：
   - --repository 必须是公开 GitHub 仓库根地址。
   - --ref 必须是已发布的不可变 tag 或 commit；正式发布不要使用 main。
+  - --skill-path 是 Skill 在仓库内的相对路径；默认适用于独立仓库。
   - 本命令只生成文字，不访问网络、不修改文件。
 `.trimStart();
 }
@@ -36,6 +38,7 @@ if (process.argv.includes("--help") || process.argv.includes("-h")) {
 
 const repository = option("--repository");
 const ref = option("--ref");
+const skillPath = option("--skill-path") || "skills/sales-intelligence-workbench/SKILL.md";
 if (!repository || !ref) throw new Error("必须同时提供 --repository 和 --ref。");
 if (ref === "main" || ref === "master") {
   throw new Error("正式初始化口令必须固定到 release tag 或 commit，不能使用 main/master。");
@@ -57,5 +60,15 @@ if (segments.length !== 2) {
 }
 
 const [owner, repo] = segments;
-const entryUrl = `https://github.com/${owner}/${repo}/blob/${encodeURIComponent(ref)}/skills/sales-intelligence-workbench/SKILL.md`;
+const skillPathSegments = skillPath.split("/").filter(Boolean);
+if (
+  skillPath.startsWith("/")
+  || skillPathSegments.includes(".")
+  || skillPathSegments.includes("..")
+  || skillPathSegments.at(-1) !== "SKILL.md"
+) {
+  throw new Error("--skill-path 必须是仓库内以 SKILL.md 结尾的安全相对路径。");
+}
+const encodedSkillPath = skillPathSegments.map((segment) => encodeURIComponent(segment)).join("/");
+const entryUrl = `https://github.com/${owner}/${repo}/blob/${encodeURIComponent(ref)}/${encodedSkillPath}`;
 process.stdout.write(`帮我初始化销售助手：${entryUrl}\n`);

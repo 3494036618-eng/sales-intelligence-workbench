@@ -21,7 +21,7 @@ function paramsFrom(match, names) {
   return Object.fromEntries(names.map((name, index) => [name, decodeURIComponent(match[index + 1])]));
 }
 
-function listMeta(data, providerMode = "mock") {
+function listMeta(data, providerMode = "real") {
   return {
     count: Array.isArray(data) ? data.length : undefined,
     provider_mode: providerMode,
@@ -30,10 +30,6 @@ function listMeta(data, providerMode = "mock") {
 
 function isSalesBusinessPath(pathname) {
   return /^\/api\/(sales-goals|target-enterprises|dossiers|provider-runs|jobs)(?:\/|$)/.test(pathname);
-}
-
-function isLegacyDemoPath(pathname) {
-  return /^\/api\/(scopes|runs|change-cards|assets)(?:\/|$)/.test(pathname);
 }
 
 function isProviderProbePath(pathname) {
@@ -57,7 +53,7 @@ function requestClientKey(req, trustProxy = false) {
   return String(req.socket?.remoteAddress || "unknown").slice(0, 120);
 }
 
-export function createRouter(service, options = {}) {
+export function createRouter(providerService, options = {}) {
   const salesService = options.salesService || null;
   const feishuImportTaskService = options.feishuImportTaskService || null;
   const adminStatusService = options.adminStatusService || null;
@@ -69,17 +65,11 @@ export function createRouter(service, options = {}) {
   const maxBodyBytes = Math.max(1024, env?.number?.("API_MAX_BODY_BYTES", 1024 * 1024) || 1024 * 1024);
   const trustProxy = ["1", "true", "yes", "on"].includes(String(env?.value?.("TRUST_PROXY", "false") || "").toLowerCase());
   const runtimePolicy = options.runtimePolicy || {
-    mode: "development",
     ready: true,
-    fail_closed: false,
-    allow_legacy_demo_api: true,
+    fail_closed: true,
     blockers: [],
   };
-  const providerMode = runtimePolicy.mode === "demo"
-    ? "mock"
-    : runtimePolicy.mode === "production"
-      ? "real"
-      : "mixed";
+  const providerMode = "real";
   const freshSalesData = async (read, options = {}) => {
     await salesService?.refreshPersistedState?.(options);
     return read();
@@ -89,12 +79,11 @@ export function createRouter(service, options = {}) {
       data: {
         status: runtimePolicy.ready ? "ok" : "degraded",
         service: "sales-intelligence-workbench-api",
-        version: "0.9.0",
-        app_mode: runtimePolicy.mode,
+        version: "0.9.1",
         provider_mode: providerMode,
         runtime_ready: runtimePolicy.ready,
       },
-      meta: { provider_mode: providerMode, app_mode: runtimePolicy.mode },
+      meta: { provider_mode: providerMode },
     }), "public"),
     route("GET", /^\/api\/auth\/status$/, [], async ({ req, res }) => ({
       data: authService
@@ -136,14 +125,14 @@ export function createRouter(service, options = {}) {
       meta: { provider_mode: "supabase_auth" },
     }), "public"),
     route("GET", /^\/api\/providers\/status$/, [], async () => ({
-      data: service.getProviderStatus(),
-      meta: { provider_mode: "mixed" },
+      data: providerService.getProviderStatus(),
+      meta: { provider_mode: "real" },
     }), "admin"),
     route("GET", /^\/api\/admin\/status$/, [], async () => ({
       data: adminStatusService
         ? await adminStatusService.getStatus()
         : { read_only: true, unavailable: true },
-      meta: { provider_mode: providerMode, app_mode: runtimePolicy.mode },
+      meta: { provider_mode: providerMode },
     }), "admin"),
     route("GET", /^\/api\/admin\/audit-events$/, [], async ({ auth, query }) => {
       const data = await authService.listAuditEvents(auth, {
@@ -154,14 +143,14 @@ export function createRouter(service, options = {}) {
       });
       return {
         data,
-        meta: { ...listMeta(data, "local"), app_mode: runtimePolicy.mode },
+        meta: { ...listMeta(data, "local") },
       };
     }, "admin"),
     route("GET", /^\/api\/admin\/workspace-export$/, [], async () => {
       await salesService?.assertRuntimeReady?.();
       return {
         data: await freshSalesData(() => salesService.exportWorkspaceData(), { force: true }),
-        meta: { provider_mode: "local", app_mode: runtimePolicy.mode },
+        meta: { provider_mode: "local" },
       };
     }, "owner", ({ auth }) => ({
       action: "workspace.exported",
@@ -169,27 +158,23 @@ export function createRouter(service, options = {}) {
       entity_id: auth?.principal?.workspace_id || "",
     })),
     route("POST", /^\/api\/providers\/web-search\/probe$/, [], async ({ body }) => ({
-      data: await service.probeWebSearch(body),
+      data: await providerService.probeWebSearch(body),
       meta: { provider_mode: "real" },
     }), "admin", () => ({ action: "provider.probed", entity_type: "provider", entity_id: "web_search" })),
     route("POST", /^\/api\/providers\/datapro\/probe$/, [], async ({ body }) => ({
-      data: await service.probeDataPro(body),
+      data: await providerService.probeDataPro(body),
       meta: { provider_mode: "real" },
     }), "admin", () => ({ action: "provider.probed", entity_type: "provider", entity_id: "datapro" })),
-    route("POST", /^\/api\/providers\/model\/probe$/, [], async ({ body }) => ({
-      data: await service.probeModel(body),
+    route("POST", /^\/api\/providers\/model\/probe$/, [], async () => ({
+      data: await providerService.probeModel(),
       meta: { provider_mode: "real" },
     }), "admin", () => ({ action: "provider.probed", entity_type: "provider", entity_id: "model" })),
-    route("POST", /^\/api\/providers\/vision\/probe$/, [], async ({ body }) => ({
-      data: await service.probeVision(body),
-      meta: { provider_mode: "real" },
-    }), "admin", () => ({ action: "provider.probed", entity_type: "provider", entity_id: "vision" })),
     route("POST", /^\/api\/providers\/openviking\/probe$/, [], async ({ body }) => ({
-      data: await service.probeOpenViking(body),
+      data: await providerService.probeOpenViking(body),
       meta: { provider_mode: "real" },
     }), "admin", () => ({ action: "provider.probed", entity_type: "provider", entity_id: "openviking" })),
     route("POST", /^\/api\/providers\/supabase\/probe$/, [], async () => ({
-      data: await service.probeSupabase(),
+      data: await providerService.probeSupabase(),
       meta: { provider_mode: "real" },
     }), "admin", () => ({ action: "provider.probed", entity_type: "provider", entity_id: "supabase" })),
 
@@ -199,11 +184,11 @@ export function createRouter(service, options = {}) {
         entity_id: query.get("entity_id") || "",
         limit: query.get("limit") || 20,
       });
-      return { data, meta: { ...listMeta(data, providerMode), app_mode: runtimePolicy.mode } };
+      return { data, meta: { ...listMeta(data, providerMode) } };
     }, "admin"),
     route("GET", /^\/api\/provider-runs\/([^/]+)$/, ["provider_run_id"], async ({ params }) => ({
       data: await salesService.getProviderRun(params.provider_run_id),
-      meta: { provider_mode: providerMode, app_mode: runtimePolicy.mode },
+      meta: { provider_mode: providerMode },
     }), "admin"),
     route("GET", /^\/api\/jobs$/, [], async ({ query }) => {
       const data = await salesService.listPublicJobs({
@@ -212,15 +197,15 @@ export function createRouter(service, options = {}) {
         entity_id: query.get("entity_id") || "",
         limit: query.get("limit") || 20,
       });
-      return { data, meta: { ...listMeta(data, providerMode), app_mode: runtimePolicy.mode } };
+      return { data, meta: { ...listMeta(data, providerMode) } };
     }),
     route("GET", /^\/api\/jobs\/([^/]+)$/, ["job_id"], async ({ params }) => ({
       data: await salesService.getPublicJob(params.job_id),
-      meta: { provider_mode: providerMode, app_mode: runtimePolicy.mode },
+      meta: { provider_mode: providerMode },
     })),
     route("POST", /^\/api\/jobs\/([^/]+)\/cancel$/, ["job_id"], async ({ params }) => ({
       data: salesService.publicJob(await salesService.cancelJob(params.job_id)),
-      meta: { provider_mode: providerMode, app_mode: runtimePolicy.mode },
+      meta: { provider_mode: providerMode },
     }), "member", ({ params }) => ({
       action: "job.cancelled",
       entity_type: "job",
@@ -228,7 +213,7 @@ export function createRouter(service, options = {}) {
     })),
     route("POST", /^\/api\/jobs\/([^/]+)\/retry$/, ["job_id"], async ({ params }) => ({
       data: await salesService.retryJob(params.job_id),
-      meta: { provider_mode: providerMode, app_mode: runtimePolicy.mode },
+      meta: { provider_mode: providerMode },
     }), "member", ({ params }) => ({
       action: "job.retried",
       entity_type: "job",
@@ -236,7 +221,7 @@ export function createRouter(service, options = {}) {
     })),
     route("GET", /^\/api\/admin\/usage-budget$/, [], async () => ({
       data: await salesService.getPaidWorkflowUsage(),
-      meta: { app_mode: runtimePolicy.mode },
+      meta: {},
     }), "admin"),
 
     route("GET", /^\/api\/sales-goals$/, [], async () => ({
@@ -410,115 +395,6 @@ export function createRouter(service, options = {}) {
       entity_type: "target_enterprise",
       entity_id: params.enterprise_id,
     })),
-
-    route("GET", /^\/api\/scopes$/, [], async () => {
-      const data = service.listScopes();
-      return { data, meta: listMeta(data) };
-    }),
-    route("POST", /^\/api\/scopes$/, [], async ({ body }) => ({
-      data: service.createScope(body),
-      status: 201,
-      meta: { provider_mode: "mock" },
-    })),
-    route("GET", /^\/api\/scopes\/([^/]+)$/, ["scope_id"], async ({ params }) => ({
-      data: service.getScope(params.scope_id),
-      meta: { provider_mode: "mock" },
-    })),
-    route("GET", /^\/api\/scopes\/([^/]+)\/stats$/, ["scope_id"], async ({ params }) => ({
-      data: service.getScopeStats(params.scope_id),
-      meta: { provider_mode: "mock" },
-    })),
-
-    route("GET", /^\/api\/scopes\/([^/]+)\/objects$/, ["scope_id"], async ({ params }) => {
-      const data = service.listObjects(params.scope_id);
-      return { data, meta: listMeta(data) };
-    }),
-    route("POST", /^\/api\/scopes\/([^/]+)\/objects$/, ["scope_id"], async ({ params, body }) => ({
-      data: service.addObject(params.scope_id, body),
-      status: 201,
-      meta: { provider_mode: "mock" },
-    })),
-    route("GET", /^\/api\/scopes\/([^/]+)\/objects\/([^/]+)$/, ["scope_id", "object_id"], async ({ params }) => ({
-      data: service.getObject(params.scope_id, params.object_id),
-      meta: { provider_mode: "mock" },
-    })),
-    route("POST", /^\/api\/scopes\/([^/]+)\/discover-objects$/, ["scope_id"], async ({ params, body }) => {
-      const data = service.discoverObjects(params.scope_id, body);
-      return {
-        data,
-        meta: {
-          ...listMeta(data),
-          message: data.length ? undefined : "未发现可核验对象。",
-        },
-      };
-    }),
-    route("GET", /^\/api\/scopes\/([^/]+)\/candidates$/, ["scope_id"], async ({ params }) => {
-      const data = service.getCandidates(params.scope_id);
-      return { data, meta: listMeta(data) };
-    }),
-
-    route("POST", /^\/api\/scopes\/([^/]+)\/objects\/([^/]+)\/runs$/, ["scope_id", "object_id"], async ({ params }) => {
-      const data = await service.runObject(params.scope_id, params.object_id);
-      return {
-        data,
-        status: 201,
-        meta: { provider_mode: data.provider_mode || "mock" },
-      };
-    }),
-    route("GET", /^\/api\/runs\/([^/]+)$/, ["run_id"], async ({ params }) => ({
-      data: service.getRun(params.run_id),
-      meta: { provider_mode: "mock" },
-    })),
-    route("GET", /^\/api\/runs\/([^/]+)\/traces$/, ["run_id"], async ({ params }) => {
-      const data = service.getRunTraces(params.run_id);
-      return { data, meta: listMeta(data) };
-    }),
-    route("GET", /^\/api\/runs\/([^/]+)\/change-cards$/, ["run_id"], async ({ params }) => {
-      const data = service.getRunCards(params.run_id);
-      return { data, meta: listMeta(data) };
-    }),
-
-    route("POST", /^\/api\/change-cards\/([^/]+)\/actions$/, ["card_id"], async ({ params, body }) => ({
-      data: await service.saveCardAction(params.card_id, body),
-      meta: { provider_mode: "mixed" },
-    })),
-
-    route("GET", /^\/api\/scopes\/([^/]+)\/memory$/, ["scope_id"], async ({ params, query }) => ({
-      data: service.getMemory(params.scope_id, { object_id: query.get("object_id") || "" }),
-      meta: { provider_mode: "mixed" },
-    })),
-    route("GET", /^\/api\/scopes\/([^/]+)\/sync-records$/, ["scope_id"], async ({ params, query }) => ({
-      data: service.getSyncRecords(params.scope_id, { object_id: query.get("object_id") || "" }),
-      meta: { provider_mode: "mixed" },
-    })),
-
-    route("GET", /^\/api\/scopes\/([^/]+)\/assets$/, ["scope_id"], async ({ params }) => {
-      const data = service.getAssets(params.scope_id);
-      return { data, meta: listMeta(data) };
-    }),
-    route("POST", /^\/api\/scopes\/([^/]+)\/assets$/, ["scope_id"], async ({ params, body }) => ({
-      data: await service.generateAsset(params.scope_id, body),
-      status: 201,
-      meta: { provider_mode: "mixed" },
-    })),
-    route("GET", /^\/api\/assets\/([^/]+)\/report$/, ["asset_id"], async ({ params }) => ({
-      data: service.getReport(params.asset_id),
-      meta: { provider_mode: "mock" },
-    })),
-
-    route("GET", /^\/api\/scopes\/([^/]+)\/qa$/, ["scope_id"], async ({ params }) => ({
-      data: service.getQa(params.scope_id),
-      meta: { provider_mode: "mock" },
-    })),
-    route("POST", /^\/api\/scopes\/([^/]+)\/qa\/messages$/, ["scope_id"], async ({ params, body }) => ({
-      data: await service.askQuestion(params.scope_id, body),
-      meta: { provider_mode: "mixed" },
-    })),
-    route("POST", /^\/api\/scopes\/([^/]+)\/qa\/excerpts$/, ["scope_id"], async ({ params, body }) => ({
-      data: service.saveExcerpt(params.scope_id, body),
-      status: 201,
-      meta: { provider_mode: "mixed" },
-    })),
   ];
 
   return async function handle(req, res) {
@@ -540,15 +416,6 @@ export function createRouter(service, options = {}) {
         const served = await staticFrontend(req, res, url.pathname);
         if (served) return;
       }
-      if (!runtimePolicy.allow_legacy_demo_api && isLegacyDemoPath(url.pathname)) {
-        throw new HttpError(404, "not_found", "API route was not found.", { method: req.method, path: url.pathname });
-      }
-      if (runtimePolicy.mode === "demo" && isProviderProbePath(url.pathname)) {
-        throw new HttpError(409, "provider_probe_disabled", "Real provider probes are disabled in demo mode.", {
-          app_mode: runtimePolicy.mode,
-          path: url.pathname,
-        });
-      }
       const found = routes.find((item) => item.method === req.method && item.pattern.test(url.pathname));
       if (!found) throw new HttpError(404, "not_found", "API route was not found.", { method: req.method, path: url.pathname });
 
@@ -563,8 +430,12 @@ export function createRouter(service, options = {}) {
         auth = await authService.authenticateRequest(req, res);
         authService.requireRole(auth, found.access);
       }
-      if (runtimePolicy.fail_closed && !runtimePolicy.ready && isSalesBusinessPath(url.pathname)) {
-        throw new HttpError(503, "runtime_not_ready", "Production runtime is not ready.");
+      if (
+        runtimePolicy.fail_closed
+        && !runtimePolicy.ready
+        && (isSalesBusinessPath(url.pathname) || isPaidOperation(req.method, url.pathname))
+      ) {
+        throw new HttpError(503, "runtime_not_ready", "Runtime configuration is not ready.");
       }
       if (isSalesBusinessPath(url.pathname)) {
         await salesService?.assertRuntimeReady?.();
@@ -598,7 +469,6 @@ export function createRouter(service, options = {}) {
       }
       const meta = {
         request_id: requestId,
-        app_mode: runtimePolicy.mode,
         ...(result.meta || {}),
       };
       if (result.status === 201) created(res, result.data, meta);

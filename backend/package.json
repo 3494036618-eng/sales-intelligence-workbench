@@ -1,6 +1,6 @@
 {
   "name": "sales-intelligence-workbench-api",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -24,15 +24,12 @@
     "verify:business": "node scripts/verify-business-chain.mjs",
     "workspace:export": "node scripts/export-workspace.mjs",
     "preflight:real": "node scripts/preflight-real.mjs",
-    "smoke:sales-supabase": "node scripts/smoke-sales-supabase.mjs",
-    "smoke:stage2-supabase": "node scripts/smoke-sales-supabase.mjs",
     "smoke:stage2-data-api": "node scripts/smoke-stage2-data-api.mjs",
     "smoke:stage3-material-sync": "node scripts/smoke-stage3-material-sync.mjs",
     "smoke:paid-workflow": "node scripts/smoke-paid-workflow-guard.mjs",
     "smoke:async-job-queue": "node scripts/smoke-async-job-queue.mjs",
     "smoke:stage2-api": "node scripts/smoke-stage2-api.mjs",
-    "smoke:stage2-backup-package": "node scripts/smoke-stage2-backup-package.mjs",
-    "smoke": "node scripts/smoke.mjs"
+    "smoke:stage2-backup-package": "node scripts/smoke-stage2-backup-package.mjs"
   },
   "engines": {
     "node": ">=20"

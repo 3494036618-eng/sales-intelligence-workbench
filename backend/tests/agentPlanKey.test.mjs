@@ -3,7 +3,6 @@ import test from "node:test";
 import { DataProProvider } from "../src/providers/dataProProvider.js";
 import { ModelProvider } from "../src/providers/modelProvider.js";
 import { OpenVikingProvider } from "../src/providers/openVikingProvider.js";
-import { VisionProvider } from "../src/providers/visionProvider.js";
 import { WebSearchProvider } from "../src/providers/webSearchProvider.js";
 
 function envReader(values = {}) {
@@ -18,7 +17,7 @@ function envReader(values = {}) {
   };
 }
 
-test("one Agent Plan key configures model, DataPro, web search and vision", () => {
+test("one Agent Plan key configures model, DataPro and web search", () => {
   const env = envReader({
     AGENT_PLAN_API_KEY: "shared-agent-plan-key",
     OPENVIKING_BASE_URL: "https://openviking.example.test",
@@ -28,7 +27,6 @@ test("one Agent Plan key configures model, DataPro, web search and vision", () =
   assert.equal(new ModelProvider({ env }).apiKey, "shared-agent-plan-key");
   assert.equal(new DataProProvider({ env }).apiKey, "shared-agent-plan-key");
   assert.equal(new WebSearchProvider({ env }).apiKey, "shared-agent-plan-key");
-  assert.equal(new VisionProvider({ env }).apiKey, "shared-agent-plan-key");
 
   const openViking = new OpenVikingProvider({ env, cliConfig: {} });
   assert.equal(openViking.apiKey, "");
@@ -42,7 +40,6 @@ test("capability-specific keys remain optional overrides", () => {
     DATAPRO_API_KEY: "datapro-override",
     WEB_SEARCH_API_KEY: "search-override",
     OPENVIKING_API_KEY: "openviking-override",
-    VISION_API_KEY: "vision-override",
   });
 
   assert.equal(new ModelProvider({ env }).apiKey, "model-override");
@@ -52,7 +49,6 @@ test("capability-specific keys remain optional overrides", () => {
     new OpenVikingProvider({ env, cliConfig: {} }).apiKey,
     "openviking-override",
   );
-  assert.equal(new VisionProvider({ env }).apiKey, "vision-override");
 });
 
 test("OpenViking does not report a missing CLI command as configured", () => {

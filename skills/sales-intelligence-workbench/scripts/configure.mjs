@@ -40,22 +40,13 @@ async function visibleQuestion(rl, label, existingValue = "") {
   return answer || existingValue;
 }
 
-function validateMode(value) {
-  const mode = value || "production";
-  if (!["production", "development"].includes(mode)) {
-    throw new Error("Skill 只允许配置 production 或 development；录屏 demo 不属于正式安装入口。");
-  }
-  return mode;
-}
-
-const mode = validateMode(readOption("--mode") || "production");
 const importPath = readOption("--from-env-file");
 
 if (importPath) {
   const resolved = resolveUserPath(importPath);
   if (!fs.existsSync(resolved)) throw new Error(`配置源文件不存在：${resolved}`);
   const imported = parseEnvFile(resolved);
-  writeConfiguration(imported, { mode });
+  writeConfiguration(imported);
   process.stdout.write(`已从现有环境文件迁移配置，源文件未被修改。\n`);
   process.stdout.write(`私密凭证：${paths.credentialsFile}（0600）\n`);
   process.stdout.write(`运行配置：${paths.runtimeFile}（0600）\n`);
@@ -76,12 +67,11 @@ try {
   const agentPlanKey = await hiddenQuestion(
     rl,
     output,
-    "Agent Plan API Key（模型、DataPro、豆包搜索、视觉模型和 OpenViking 控制面共用）",
+    "Agent Plan API Key（模型、DataPro、豆包搜索和 OpenViking 控制面共用）",
     existing.AGENT_PLAN_API_KEY
       || existing.MODEL_API_KEY
       || existing.DATAPRO_API_KEY
-      || existing.WEB_SEARCH_API_KEY
-      || existing.VISION_API_KEY,
+      || existing.WEB_SEARCH_API_KEY,
   );
   if (!agentPlanKey) throw new Error("Agent Plan API Key 不能为空。");
   const detectedOpenViking = openVikingCliConfiguration(existing);
@@ -141,10 +131,9 @@ try {
     VOLCENGINE_SECRET_KEY: existing.VOLCENGINE_SECRET_KEY || "",
     FEISHU_CLI_IMPORT_ENABLED: /^true|1|yes$/i.test(feishuAnswer) ? "true" : "false",
     FEISHU_SYNC_ENABLED: /^true|1|yes$/i.test(feishuAnswer) ? "true" : "false",
-    VISION_API_KEY: "",
     LIVE_PROBE_COMPANY: liveProbeCompany,
     AUTH_REDIRECT_URL: authRedirectUrl,
-  }, { mode });
+  });
 
   process.stdout.write(`私密凭证已写入 ${paths.credentialsFile}（0600）。\n`);
   process.stdout.write(`运行配置已写入 ${paths.runtimeFile}（0600）。\n`);

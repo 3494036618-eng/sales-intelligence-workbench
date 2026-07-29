@@ -506,9 +506,9 @@ function isOfficialPublicSource(source, url) {
 }
 
 function sourceQuality(kind, source, url) {
-  const isFixture = /^(mock|demo|fixture)$/i.test(text(source.provider_mode, 40));
-  if (isFixture) {
-    return { source_quality: "limited", source_quality_label: "演示来源", quality_tier: 3, official: false };
+  const isTestSource = /^(mock|demo|fixture)$/i.test(text(source.provider_mode, 40));
+  if (isTestSource) {
+    return { source_quality: "limited", source_quality_label: "测试或占位来源", quality_tier: 3, official: false };
   }
   if (kind === "professional") {
     return { source_quality: "professional", source_quality_label: "专业权威来源", quality_tier: 1, official: true };

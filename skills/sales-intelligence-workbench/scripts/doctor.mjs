@@ -26,12 +26,11 @@ if (!fs.existsSync(paths.runtimeFile)) localBlockers.push("runtime.env 不存在
 if (fs.existsSync(paths.credentialsFile) && !credentialFileIsPrivate()) {
   localBlockers.push("credentials.env 权限过宽，必须为 0600");
 }
-if (summary.app_mode === "demo") localBlockers.push("正式 Skill 不允许 APP_MODE=demo");
-if (summary.app_mode === "production" && !summary.async_jobs) {
-  localBlockers.push("生产模式必须启用持久化异步任务队列");
+if (!summary.async_jobs) {
+  localBlockers.push("必须启用持久化异步任务队列");
 }
-if (summary.app_mode === "production" && summary.worker_lease_seconds < 60) {
-  localBlockers.push("生产模式的 Worker 租约必须不少于 60 秒");
+if (summary.worker_lease_seconds < 60) {
+  localBlockers.push("Worker 租约必须不少于 60 秒");
 }
 if (summary.feishu_sync && !commandExists("lark-cli")) localBlockers.push("已启用飞书 CLI 导入，但找不到 lark-cli");
 if (!summary.feishu_sync && !commandExists("lark-cli")) localWarnings.push("飞书 CLI 导入未启用，且当前未检测到 lark-cli");
@@ -73,7 +72,7 @@ const report = {
 
 process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
 if (live) writePrivateJson(paths.lastDoctorFile, report);
-if (live && !onlyProvider && ok && backendReport?.production_ready) {
+if (live && !onlyProvider && ok && backendReport?.runtime_ready) {
   writePrivateJson(paths.liveDoctorFile, backendReport);
 }
 if (!ok) process.exitCode = 1;

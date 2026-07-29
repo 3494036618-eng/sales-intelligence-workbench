@@ -60,7 +60,7 @@ export class ProviderRunStore {
       id: makeId("provider_run"),
       operation: redactSecrets(input.operation || "provider_workflow", 120),
       status: "running",
-      app_mode: redactSecrets(input.app_mode || "development", 40),
+      app_mode: "production",
       entity_type: redactSecrets(input.entity_type || "", 80),
       entity_id: redactSecrets(input.entity_id || "", 160),
       job_id: redactSecrets(input.job_id || "", 160) || null,

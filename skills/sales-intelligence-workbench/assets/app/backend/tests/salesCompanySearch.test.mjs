@@ -2,18 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { SalesService } from "../src/services/salesService.js";
 
-const developmentPolicy = Object.freeze({
-  mode: "development",
+const permissiveTestPolicy = Object.freeze({
   fail_closed: false,
-  allow_fixture_data: false,
-  allow_provider_fallback: false,
 });
 
-const productionPolicy = Object.freeze({
-  mode: "production",
+const strictRuntimePolicy = Object.freeze({
   fail_closed: true,
-  allow_fixture_data: false,
-  allow_provider_fallback: false,
 });
 
 function emptyState() {
@@ -89,7 +83,7 @@ test("company search uses structured DataPro identities and deduplicates repeate
   const repository = createRepository();
   const service = new SalesService({
     env: envReader({ APP_WORKSPACE_ID: "workspace-test" }),
-    runtimePolicy: developmentPolicy,
+    runtimePolicy: permissiveTestPolicy,
     seed: emptyState(),
     repository,
     dataProProvider: {
@@ -148,7 +142,7 @@ test("company search uses structured DataPro identities and deduplicates repeate
 test("company search can parse a DataPro text summary when structured items are absent", async () => {
   const service = new SalesService({
     env: envReader(),
-    runtimePolicy: developmentPolicy,
+    runtimePolicy: permissiveTestPolicy,
     seed: emptyState(),
     dataProProvider: {
       isRunEnabled: () => true,
@@ -171,11 +165,11 @@ test("company search can parse a DataPro text summary when structured items are 
   assert.equal(results[0].location, "上海市");
 });
 
-test("production search rejects a successful DataPro response without an identifiable company", async () => {
+test("runtime search rejects a successful DataPro response without an identifiable company", async () => {
   const repository = createRepository();
   const service = new SalesService({
     env: envReader(),
-    runtimePolicy: productionPolicy,
+    runtimePolicy: strictRuntimePolicy,
     seed: emptyState(),
     repository,
     dataProProvider: {
@@ -198,11 +192,11 @@ test("production search rejects a successful DataPro response without an identif
   assert.equal(Object.keys(service.data.companies).length, 0);
 });
 
-test("production search keeps a verified DataPro candidate when optional web search is unavailable", async () => {
+test("runtime search keeps a verified DataPro candidate when optional web search is unavailable", async () => {
   const repository = createRepository();
   const service = new SalesService({
     env: envReader(),
-    runtimePolicy: productionPolicy,
+    runtimePolicy: strictRuntimePolicy,
     seed: emptyState(),
     repository,
     dataProProvider: {

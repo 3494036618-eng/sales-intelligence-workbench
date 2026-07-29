@@ -2,18 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { SalesService } from "../src/services/salesService.js";
 
-const developmentPolicy = Object.freeze({
-  mode: "development",
+const permissiveTestPolicy = Object.freeze({
   fail_closed: false,
-  allow_fixture_data: false,
-  allow_provider_fallback: false,
 });
 
-const productionPolicy = Object.freeze({
-  mode: "production",
+const strictRuntimePolicy = Object.freeze({
   fail_closed: true,
-  allow_fixture_data: false,
-  allow_provider_fallback: false,
 });
 
 function envReader(values = {}) {
@@ -110,8 +104,8 @@ function createWorkflowService({
     },
   };
   const service = new SalesService({
-    env: envReader({ APP_WORKSPACE_ID: "workspace-test" }),
-    runtimePolicy: developmentPolicy,
+    env: envReader({ APP_WORKSPACE_ID: "workspace-test", ASYNC_JOBS_ENABLED: "false" }),
+    runtimePolicy: permissiveTestPolicy,
     seed: seedData,
     dataProProvider: {
       maxSources: 1,
@@ -254,7 +248,7 @@ test("dossier evidence collection supplements professional data with public risk
   const webQueries = [];
   const service = new SalesService({
     env: envReader({ APP_WORKSPACE_ID: "workspace-test" }),
-    runtimePolicy: developmentPolicy,
+    runtimePolicy: permissiveTestPolicy,
     seed: seed(),
     dataProProvider: {
       maxSources: 2,
@@ -354,7 +348,7 @@ test("dossier generation repairs invalid model citation ids once", async () => {
   };
   const service = new SalesService({
     env: envReader({ APP_WORKSPACE_ID: "workspace-test" }),
-    runtimePolicy: productionPolicy,
+    runtimePolicy: strictRuntimePolicy,
     seed: seed(),
     modelProvider,
   });
@@ -441,7 +435,7 @@ test("dossier generation repairs invalid model citation ids once", async () => {
   assert.equal(dossier.raw_ref, "model:dossier-repaired");
 });
 
-test("production repairs a malformed dossier JSON response from the original model output", async () => {
+test("runtime repairs a malformed dossier JSON response from the original model output", async () => {
   const modelCalls = [];
   const modelProvider = {
     isRunEnabled: () => true,
@@ -479,7 +473,7 @@ test("production repairs a malformed dossier JSON response from the original mod
   };
   const service = new SalesService({
     env: envReader({ APP_WORKSPACE_ID: "workspace-test" }),
-    runtimePolicy: productionPolicy,
+    runtimePolicy: strictRuntimePolicy,
     seed: seed(),
     modelProvider,
   });
@@ -643,7 +637,7 @@ test("QA hides legacy dossier-memory answers and excludes them from follow-up co
     {
       id: "qa_assistant_legacy",
       role: "assistant",
-      text: "旧 Demo 回答",
+      text: "旧版回答",
       citations: [{
         id: "legacy_dossier_memory",
         source_kind: "内部资料",
@@ -1219,7 +1213,7 @@ test("dossier generation reconstructs a useful report after two repetitive malfo
   const modelCalls = [];
   const service = new SalesService({
     env: envReader({ APP_WORKSPACE_ID: "workspace-test" }),
-    runtimePolicy: developmentPolicy,
+    runtimePolicy: permissiveTestPolicy,
     seed: seed(),
     modelProvider: {
       isRunEnabled: () => true,
@@ -1292,11 +1286,11 @@ test("dossier generation reconstructs a useful report after two repetitive malfo
   )));
 });
 
-test("production reconstruction keeps target-company collaboration news after an invalid repair response", async () => {
+test("runtime reconstruction keeps target-company collaboration news after an invalid repair response", async () => {
   const modelCalls = [];
   const service = new SalesService({
     env: envReader({ APP_WORKSPACE_ID: "workspace-test" }),
-    runtimePolicy: productionPolicy,
+    runtimePolicy: strictRuntimePolicy,
     seed: seed(),
     modelProvider: {
       isRunEnabled: () => true,
@@ -1384,7 +1378,7 @@ test("production reconstruction keeps target-company collaboration news after an
 test("dossier reconstruction ignores empty specialized databases when enforcing section sources", async () => {
   const service = new SalesService({
     env: envReader({ APP_WORKSPACE_ID: "workspace-test" }),
-    runtimePolicy: developmentPolicy,
+    runtimePolicy: permissiveTestPolicy,
     seed: seed(),
     modelProvider: {
       isRunEnabled: () => true,
@@ -1456,10 +1450,10 @@ test("dossier reconstruction ignores empty specialized databases when enforcing 
   )));
 });
 
-test("production rejects a QA answer that fabricates citation identifiers", async () => {
+test("runtime rejects a QA answer that fabricates citation identifiers", async () => {
   const service = new SalesService({
     env: envReader(),
-    runtimePolicy: productionPolicy,
+    runtimePolicy: strictRuntimePolicy,
     seed: seed(),
     modelProvider: {
       isRunEnabled: () => true,
@@ -1489,11 +1483,11 @@ test("production rejects a QA answer that fabricates citation identifiers", asyn
   );
 });
 
-test("production repairs a malformed QA JSON response from the original model output", async () => {
+test("runtime repairs a malformed QA JSON response from the original model output", async () => {
   const calls = [];
   const service = new SalesService({
     env: envReader(),
-    runtimePolicy: productionPolicy,
+    runtimePolicy: strictRuntimePolicy,
     seed: seed(),
     modelProvider: {
       isRunEnabled: () => true,
@@ -1558,7 +1552,7 @@ test("production repairs a malformed QA JSON response from the original model ou
   assert.deepEqual(answer.citation_ids, ["evidence_real"]);
 });
 
-test("production retries a QA answer that omits explicit table items", async () => {
+test("runtime retries a QA answer that omits explicit table items", async () => {
   const calls = [];
   const evidence = [{
     id: "evidence_capabilities",
@@ -1578,7 +1572,7 @@ test("production retries a QA answer that omits explicit table items", async () 
   }];
   const service = new SalesService({
     env: envReader(),
-    runtimePolicy: productionPolicy,
+    runtimePolicy: strictRuntimePolicy,
     seed: seed(),
     modelProvider: {
       isRunEnabled: () => true,
@@ -1622,11 +1616,11 @@ test("production retries a QA answer that omits explicit table items", async () 
   assert.match(answer.text, /消耗统一计量/);
 });
 
-test("production retries a QA answer with invalid citations and keeps fail-closed validation", async () => {
+test("runtime retries a QA answer with invalid citations and keeps fail-closed validation", async () => {
   const calls = [];
   const service = new SalesService({
     env: envReader(),
-    runtimePolicy: productionPolicy,
+    runtimePolicy: strictRuntimePolicy,
     seed: seed(),
     modelProvider: {
       isRunEnabled: () => true,

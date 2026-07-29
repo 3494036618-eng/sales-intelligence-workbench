@@ -18,7 +18,7 @@ test("Supabase setup rejects ordinary pay-as-you-go workspaces", sourceOnly, () 
   assert.match(source, /"--detail"/);
   assert.match(source, /workspace\?\.is_agent_plan/);
   assert.match(source, /workspace\?\.is_agent_plan_instance/);
-  assert.match(source, /目标 Supabase Workspace 不是 Agent Plan 实例/);
+  assert.match(source, /目标不是 AI Native 应用开发底座（Supabase）的 Agent Plan Workspace/);
 });
 
 test("Supabase setup supports an explicit CLI profile without leaking static credentials", sourceOnly, () => {

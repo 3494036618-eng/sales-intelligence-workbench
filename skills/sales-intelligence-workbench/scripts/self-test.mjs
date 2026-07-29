@@ -89,7 +89,7 @@ if (command === "list") {
   assert.equal(initialReport.stages.find((item) => item.id === "app")?.status, "pending");
 
   runScript("install.mjs");
-  runScript("configure.mjs", ["--from-env-file", fixtureEnv, "--mode", "production"]);
+  runScript("configure.mjs", ["--from-env-file", fixtureEnv]);
   const configureSource = fs.readFileSync(path.join(scriptsDir, "configure.mjs"), "utf8");
   assert.doesNotMatch(configureSource, /OpenViking 数据面 API Key|OpenViking 专用 API Key/);
   assert.doesNotMatch(configureSource, /hiddenQuestion\(rl, output, "Supabase Service Role Key"/);
@@ -139,22 +139,18 @@ if (command === "list") {
   assert.equal(setupConfigured.stages.find((item) => item.id === "feishu_cli")?.status, "skipped");
   assert.equal(setupConfigured.stages.find((item) => item.id === "live_doctor")?.status, "pending");
 
-  const productionStart = runScript("start.mjs", ["--dry-run"]);
-  assert.match(productionStart.stdout, /启动预检通过/);
-  assert.match(productionStart.stderr, /没有全绿 live doctor 结果/);
-
-  runScript("configure.mjs", ["--from-env-file", fixtureEnv, "--mode", "development"]);
-  const dryStart = runScript("start.mjs", ["--dry-run"]);
-  assert.match(dryStart.stdout, /启动预检通过/);
+  const startCheck = runScript("start.mjs", ["--dry-run"]);
+  assert.match(startCheck.stdout, /启动预检通过/);
+  assert.match(startCheck.stderr, /没有全绿 live doctor 结果/);
 
   const status = runScript("status.mjs");
   const parsedStatus = JSON.parse(status.stdout);
   assert.equal(parsedStatus.installed, true);
   assert.equal(parsedStatus.running, false);
-  assert.equal(parsedStatus.configuration.app_mode, "development");
+  assert.equal(parsedStatus.configuration.repository_mode, "supabase");
 
   runScript("uninstall.mjs", ["--purge", "--yes"]);
-  process.stdout.write("Skill Builder 隔离自测通过：单 Agent Plan Key、OpenViking 与 Supabase 内部凭据不要求用户输入、业务范围、阶段判断、安装、配置、doctor、生产降级启动、开发预检、状态和卸载均符合预期。\n");
+  process.stdout.write("Skill Builder 隔离自测通过：单 Agent Plan Key、OpenViking 与 Supabase 内部凭据不要求用户输入、业务范围、阶段判断、安装、配置、doctor、正式启动预检、状态和卸载均符合预期。\n");
 } finally {
   fs.rmSync(tempRoot, { recursive: true, force: true });
 }

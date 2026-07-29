@@ -514,10 +514,6 @@ p {
   background: var(--orange);
 }
 
-.runtime-status.demo i {
-  background: var(--purple);
-}
-
 .icon-button {
   width: 34px;
   height: 34px;

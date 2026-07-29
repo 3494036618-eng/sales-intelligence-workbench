@@ -16,9 +16,9 @@ const steps = [
     cwd: projectRoot,
   },
   {
-    name: "前端服务层语法",
+    name: "前端文本格式化语法",
     command: process.execPath,
-    args: ["--check", "frontend/services.js"],
+    args: ["--check", "frontend/text-format.js"],
     cwd: projectRoot,
   },
   {

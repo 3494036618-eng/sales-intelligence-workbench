@@ -3,7 +3,7 @@
 ## 本机要求
 
 - Node.js 20 或更高版本。
-- 可访问的 Agent Plan、DataPro、豆包搜索、Agent Plan Supabase 和 OpenViking 资源。
+- 可访问的 Agent Plan 模型，以及在控制台能力列表中“开启抵扣”并按需完成“配置使用”的专业数据集（DataPro）、豆包搜索（联网搜索）、Agent 记忆（OpenViking）和 AI Native 应用开发底座（Supabase）。
 - 需要飞书资料同步时，安装并登录 `lark-cli`。
 - 数据库迁移、备份或恢复需要火山 Supabase 控制面凭证及 CLI。
 
@@ -23,7 +23,7 @@
 
 1. `install.mjs` 安装应用并执行测试。
 2. `configure.mjs` 只收集一枚 Agent Plan Key 和业务选项。
-3. `setup-supabase.mjs` 查看 Supabase 初始化计划。
+3. `setup-supabase.mjs` 查看 AI Native 应用开发底座（Supabase）初始化计划。
 4. 用户确认目标后运行 `setup-supabase.mjs --apply --yes`，自动获取 Data API 配置、执行迁移、创建应用 Workspace 记录并回读。
 5. 配置 Supabase Auth 密码恢复和受保护的本机或内网入口；当前 Beta 是单工作区、单人使用模式。
 6. 运行 `doctor.mjs`。

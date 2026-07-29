@@ -125,7 +125,7 @@ function controlPlaneCommand() {
 function mapControlPlaneError(raw, secrets) {
   const message = redact(raw, secrets);
   if (/ProductUnordered/i.test(message)) {
-    return "当前 Agent Plan 尚未开通 OpenViking Harness。请在 Agent Plan 控制台完成能力开通后重试。";
+    return "当前 Agent Plan 尚未开通 Agent 记忆（OpenViking）。请在控制台对应能力卡片完成开通后重试。";
   }
   if (/Unauthorized|Forbidden|Invalid.*Key|Authentication/i.test(message)) {
     return "Agent Plan Key 无效、已过期或无权管理 OpenViking，请更新套餐 Key 后重试。";
@@ -327,7 +327,7 @@ writeConfiguration({
   OPENVIKING_RESOURCE_ID: resourceId,
   OPENVIKING_COLLECTION_NAME: name,
   OPENVIKING_RUN_ENABLED: "true",
-}, { mode: configuration.APP_MODE || "production" });
+});
 
 fs.chmodSync(paths.credentialsFile, 0o600);
 process.stdout.write(`${created ? "已创建" : "已复用"} Agent Plan OpenViking 记忆库：${name}（${resourceId}）。\n`);

@@ -13,11 +13,8 @@ function envReader(values = {}) {
   };
 }
 
-const productionPolicy = Object.freeze({
-  mode: "production",
+const strictRuntimePolicy = Object.freeze({
   fail_closed: true,
-  allow_fixture_data: false,
-  allow_provider_fallback: false,
   http_auth_enabled: true,
 });
 
@@ -39,7 +36,7 @@ test("admin status reports only safe deployment, backup and live-doctor metadata
     checked_at: new Date().toISOString(),
     ok: false,
     backend: {
-      production_ready: false,
+      runtime_ready: false,
       blockers: ["web search failed"],
       checks: {
         model: { called: true, ok: true, provider_mode: "real" },
@@ -58,7 +55,7 @@ test("admin status reports only safe deployment, backup and live-doctor metadata
       SALES_WORKBENCH_LIVE_DOCTOR_FILE: doctorFile,
       AGENT_PLAN_API_KEY: "must-not-appear",
     }),
-    runtimePolicy: productionPolicy,
+    runtimePolicy: strictRuntimePolicy,
     getProviderStatus: () => ({
       repository: { active: "supabase" },
       providers: [{ id: "model", label: "Model", status: "configured", safe_config: { run_enabled: true } }],
@@ -80,7 +77,7 @@ test("admin status reports only safe deployment, backup and live-doctor metadata
 test("admin status handles installations without a backup or doctor state path", async () => {
   const service = new AdminStatusService({
     env: envReader(),
-    runtimePolicy: productionPolicy,
+    runtimePolicy: strictRuntimePolicy,
     getProviderStatus: () => ({ providers: [], repository: { active: "memory" } }),
   });
 

@@ -2,18 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { SalesService } from "../src/services/salesService.js";
 
-const developmentPolicy = Object.freeze({
-  mode: "development",
+const permissiveTestPolicy = Object.freeze({
   fail_closed: false,
-  allow_fixture_data: false,
-  allow_provider_fallback: false,
 });
 
-const productionPolicy = Object.freeze({
-  mode: "production",
+const strictRuntimePolicy = Object.freeze({
   fail_closed: true,
-  allow_fixture_data: false,
-  allow_provider_fallback: false,
 });
 
 function envReader(values = {}) {
@@ -124,7 +118,7 @@ function createService(provider = openVikingFake()) {
     provider,
     service: new SalesService({
       env: envReader({ APP_WORKSPACE_ID: "workspace-test" }),
-      runtimePolicy: developmentPolicy,
+      runtimePolicy: permissiveTestPolicy,
       seed: seed(),
       openVikingProvider: provider,
     }),
@@ -229,7 +223,7 @@ test("incremental Feishu import restores prior content from OpenViking after a p
   persistedSeed.materials[first.material.id].source_items = [];
   const restartedService = new SalesService({
     env: envReader({ APP_WORKSPACE_ID: "workspace-test" }),
-    runtimePolicy: developmentPolicy,
+    runtimePolicy: permissiveTestPolicy,
     seed: persistedSeed,
     openVikingProvider: provider,
   });
@@ -261,11 +255,11 @@ test("OpenViking retrieval is restricted to the selected company's Feishu materi
   assert.notEqual(provider.finds[0].options.uri, provider.finds[1].options.uri);
 });
 
-test("production does not disguise an empty OpenViking retrieval with local materials", async () => {
+test("runtime does not disguise an empty OpenViking retrieval with local materials", async () => {
   const provider = openVikingFake();
   const service = new SalesService({
     env: envReader({ APP_WORKSPACE_ID: "workspace-test" }),
-    runtimePolicy: productionPolicy,
+    runtimePolicy: strictRuntimePolicy,
     seed: seed(),
     openVikingProvider: provider,
   });
@@ -289,7 +283,7 @@ test("production does not disguise an empty OpenViking retrieval with local mate
   assert.equal(provider.finds.length, 1);
 });
 
-test("development does not disguise an empty OpenViking retrieval with local material content", async () => {
+test("test policy does not disguise an empty OpenViking retrieval with local material content", async () => {
   const { service } = createService();
   service.data.materials.material_1 = {
     id: "material_1",

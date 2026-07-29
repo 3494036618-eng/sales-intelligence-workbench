@@ -18,7 +18,7 @@ import {
 
 const testDir = path.dirname(fileURLToPath(import.meta.url));
 
-test("legacy real-chain script cannot be mistaken for real production evidence", () => {
+test("legacy real-chain script cannot be mistaken for real runtime evidence", () => {
   const source = fs.readFileSync(path.join(testDir, "..", "scripts", "real-chain-check.mjs"), "utf8");
   assert.doesNotMatch(source, /createMockProviders|MemoryRepository|DemoService/);
   assert.match(source, /旧脚本已停用/);

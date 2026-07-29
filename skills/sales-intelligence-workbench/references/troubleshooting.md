@@ -20,14 +20,14 @@
 ## live doctor 失败
 
 - DataPro 超时：记录 request/error 和发生时间，检查权限与平台状态；不要改用静态工商数据。
-- 豆包搜索平台错误：确认 Agent Plan 套餐为 Running，控制台“使用配置 → 配置 Harness”已开启豆包搜索，Key 为当前 Agent Plan 专属 API Key；保留错误码和 request ID，并用 `doctor.mjs --live --only-provider web_search` 单项复测。`10500` 在重试后仍出现时按上游服务异常反馈，不得改用静态新闻兜底。
+- 豆包搜索平台错误：确认 Agent Plan 套餐为 Running，控制台“豆包搜索”能力卡片已“开启抵扣”并按需完成“配置使用”，Key 为当前 Agent Plan 专属 API Key；保留错误码和 request ID，并用 `doctor.mjs --live --only-provider web_search` 单项复测。`10500` 在重试后仍出现时按上游服务异常反馈，不得改用静态新闻兜底。
 - 模型鉴权失败：检查 Key、Base URL 和套餐；不要在日志打印 Key。
 - OpenViking 健康成功但检索失败：检查命名空间和 CLI/API 配置。
 - Supabase 控制面失败：Data API 可用不代表 CLI 控制面权限可用；`aidap:CreateWorkspace` 被拒绝时，需要账号管理员授权或代为创建 Agent Plan Workspace。
 
-## production 启动后部分功能不可用
+## 启动后部分功能不可用
 
-production 只在配置 doctor 不通过时拒绝启动。live doctor 失败或过期时仍可进入工作台查看已有数据、导入资料和检查状态；依赖异常 Provider 的操作会明确失败，不会使用演示数据。
+配置 doctor 不通过时工作台拒绝启动。live doctor 失败或过期时仍可进入工作台查看已有数据、导入资料和检查状态；依赖异常 Provider 的操作会明确失败，不会生成替代数据。
 
 重新告知会产生最小调用后，可执行 `doctor.mjs --live`；`--only-provider` 用于定位单项故障。不要手工伪造 `doctor-live.json`。
 

@@ -24,13 +24,11 @@ const doctor = run(process.execPath, [path.join(paths.skillRoot, "scripts", "doc
 if (doctor.status !== 0) throw new Error("配置检查未通过，未启动服务。");
 
 const configuration = readConfiguration();
-if (configuration.APP_MODE === "production") {
-  const evidence = liveDoctorEvidence();
-  if (!evidence.fresh) {
-    process.stderr.write(
-      `提示：最近 ${Math.round(evidence.ttl_ms / 60000)} 分钟内没有全绿 live doctor 结果；服务仍会启动，依赖异常 Provider 的业务操作将严格失败且不会使用演示数据。\n`,
-    );
-  }
+const evidence = liveDoctorEvidence();
+if (!evidence.fresh) {
+  process.stderr.write(
+    `提示：最近 ${Math.round(evidence.ttl_ms / 60000)} 分钟内没有全绿 live doctor 结果；服务仍会启动，依赖异常 Provider 的业务操作将严格失败且不会生成替代数据。\n`,
+  );
 }
 
 const address = serverAddress();
@@ -76,7 +74,7 @@ if (processExists(existingPid)) {
 }
 
 const asyncJobsEnabled = ["1", "true", "yes", "on"].includes(
-  String(configuration.ASYNC_JOBS_ENABLED || (configuration.APP_MODE === "production" ? "true" : "false")).toLowerCase(),
+  String(configuration.ASYNC_JOBS_ENABLED || "true").toLowerCase(),
 );
 if (asyncJobsEnabled && !processExists(existingWorkerPid)) {
   fs.rmSync(paths.workerPidFile, { force: true });
