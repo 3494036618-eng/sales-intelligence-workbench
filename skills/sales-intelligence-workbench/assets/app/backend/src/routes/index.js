@@ -413,7 +413,7 @@ export function createRouter(providerService, options = {}) {
 
       const clientKey = requestClientKey(req, trustProxy);
       if (rateLimiters?.general) enforceRateLimit(res, rateLimiters.general, clientKey);
-      if (/^\/api\/auth\/(?:bootstrap|login|cli-login|cli-refresh|password\/(?:recover|update))$/.test(url.pathname) && rateLimiters?.auth) {
+      if (/^\/api\/auth\/(?:bootstrap|login|cli-login|cli-refresh)$/.test(url.pathname) && rateLimiters?.auth) {
         enforceRateLimit(res, rateLimiters.auth, clientKey, "auth_rate_limit_exceeded");
       }
       let auth = null;
