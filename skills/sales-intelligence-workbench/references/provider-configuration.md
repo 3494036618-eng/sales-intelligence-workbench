@@ -43,13 +43,17 @@ Supabase 初始化需要用户在官方 CLI 完成一次火山账号 OAuth 登�
 - `ASYNC_JOBS_ENABLED=true`；`JOB_WORKER_LEASE_SECONDS` 不低于 `60`，默认 `600`
 - `SUPABASE_CLI_PROFILE` 指向已用 `--is-agent-plan` 登录的 profile，目标 Workspace 具备 Agent Plan 属性
 - 模型、专业数据集（DataPro）、豆包搜索（联网搜索）和 Agent 记忆（OpenViking）已配置且各自 `*_RUN_ENABLED=true`
+- `MODEL_MAX_RETRIES` 默认 `1`、上限 `2`，只重试超时、限流、网络和上游临时故障；设为 `0` 可关闭模型传输层重试
+- `DOSSIER_AGENT_MAX_CALLS` 默认 `3`、范围 `1-3`，限制单次档案任务的六章节规划与定点修订总预算；首次完整规划合格后立即停止，否则最多再局部修订两次。六章正文由服务端确定性组装，不另行调用模型自由成稿
+- `DOSSIER_CHECKPOINT_TTL_MS` 默认 `1800000`（30 分钟），控制失败重试可复用的内部证据检查点时效；新刷新任务不继承旧任务检查点
+- `DOSSIER_DATAPRO_CONCURRENCY` 默认 `2`、`DOSSIER_WEB_CONCURRENCY` 默认 `3`，限制同一档案任务的只读采集并发；增大并发会提高上游限流和瞬时失败风险
 飞书 CLI 导入由 `FEISHU_CLI_IMPORT_ENABLED` 控制；旧配置
 `FEISHU_SYNC_ENABLED` 仍兼容。启用时 doctor 必须检测到 `lark-cli`。任务数量上限可用
 `FEISHU_CLI_IMPORT_TASK_LIMIT` 调整；该任务状态当前只在 API 进程内保存。
 
 OpenViking 保存飞书正文，并按官方“确认或创建会话 → 逐条添加消息 → 提交会话”流程保存资料问答记忆。提交频率和保留的近期消息数可分别用 `OPENVIKING_QA_AUTO_COMMIT_EVERY`、`OPENVIKING_QA_KEEP_RECENT_MESSAGES` 调整。自动取得的内部凭证只供后端读取，不会复制到前端、日志或用户引导。
 
-首次使用只设置唯一的本机管理员用户名和密码，不需要邮箱或邮件服务。忘记密码时在安装工作台的本机运行 `reset-password.mjs`，由后端私密配置直接更新该账号。`SUPABASE_SERVICE_ROLE_KEY` 始终留在后端；任何用户密码都不得写入命令行参数、日志、截图或前端持久化存储。
+首次使用只设置唯一的本机管理员用户名和密码，不需要邮箱或邮件服务。设置完成后浏览器保存长期会话，短期访问令牌过期时由服务端自动续期；只有主动退出或长期会话失效时才再次使用原账号登录。`SUPABASE_SERVICE_ROLE_KEY` 始终留在后端；任何用户密码都不得写入命令行参数、日志、截图或前端持久化存储。
 
 ## doctor 语义
 
@@ -68,4 +72,4 @@ OpenViking 保存飞书正文，并按官方“确认或创建会话 → 逐条�
 
 `PAID_WORKFLOW_DAILY_LIMIT` 统计的是付费工作流尝试次数。一次档案生成可能包含 DataPro、豆包搜索和模型多个步骤；一次资料问答还会包含 OpenViking 召回与 Session 写入。因此该值用于防止失控调用，不能作为 AFP 或金额报表。精确用量应结合 Provider Run 的 Token/调用记录与官方账单。
 
-数据库必须依次应用到 `202607280002_secure_internal_tables.sql`。迁移缺失时应用会返回 `503`，不会退化为单进程内存队列或请求内假成功。该迁移把内部元数据表纳入 RLS 边界，并只允许后端 `service_role` 访问。档案和 OpenViking 批量同步先持久化入队，Worker 原子领取后才建立付费预约；预约后的异常不会自动重复调用 Provider。问答正文由 OpenViking 保存和检索，Supabase 仅保存业务结构与 OpenViking 会话引用。
+数据库必须依次应用到 `202607300001_durable_job_checkpoints.sql`。迁移缺失时应用会返回 `503`，不会退化为单进程内存队列或请求内假成功。内部元数据表只允许后端 `service_role` 访问；Job 失败或取消时，数据库会同步结束关联的 Provider Run 和运行中步骤，避免留下“任务已失败、调用仍运行”的悬挂状态。档案和 OpenViking 批量同步先持久化入队，Worker 原子领取后才建立付费预约。仅超时、限流、网络和上游临时故障进入有界退避重试；档案任务逐项保存已完成的只读查询和证据包，重试只继续未完成查询，不重复已经成功的 Provider 调用。鉴权、配置、请求校验和内容门禁错误不自动重试。问答正文由 OpenViking 保存和检索，Supabase 仅保存业务结构与 OpenViking 会话引用。

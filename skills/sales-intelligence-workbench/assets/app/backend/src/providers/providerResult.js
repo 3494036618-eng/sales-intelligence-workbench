@@ -1,5 +1,15 @@
 const AUTH_CODES = new Set(["401", "403", "unauthorized", "forbidden", "invalid_api_key", "authentication_error"]);
-const VALIDATION_CODES = new Set(["bad_request", "missing_sources", "invalid_json", "validation_error"]);
+const VALIDATION_CODES = new Set([
+  "4003",
+  "bad_request",
+  "invalid_query",
+  "missing_sources",
+  "invalid_json",
+  "invalid_function_arguments",
+  "missing_function_call",
+  "unexpected_function_call",
+  "validation_error",
+]);
 const CONFIG_CODES = new Set(["missing_config", "missing_http_config", "missing_cli", "disabled", "provider_disabled"]);
 const NETWORK_CODES = new Set(["network_error", "econnreset", "econnrefused", "enotfound"]);
 
@@ -24,7 +34,10 @@ export function classifyProviderError(input = {}) {
   if (code === "429" || httpStatus === 429 || /rate.?limit|too many requests|限流/.test(message)) {
     return { category: "rate_limit", retryable: true };
   }
-  if (httpStatus >= 500 || /temporar|unavailable|service busy|暂时不可用/.test(message)) {
+  if (
+    httpStatus >= 500
+    || /temporar|unavailable|service busy|internal (?:server )?error|暂时不可用|内部错误/.test(message)
+  ) {
     return { category: "upstream", retryable: true };
   }
   return { category: "unknown", retryable: false };

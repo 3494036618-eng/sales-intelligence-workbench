@@ -137,6 +137,25 @@ async function withRouter(run, options = {}) {
   await run((pathname, options) => requestRouter(router, pathname, options));
 }
 
+test("dossier detail reuses freshly loaded sales state instead of forcing a full Supabase refresh", async () => {
+  const refreshOptions = [];
+  await withRouter(async (request) => {
+    const response = await request("/api/dossiers/dossier-1", {
+      headers: { authorization: "Bearer viewer" },
+    });
+    assert.equal(response.status, 200);
+    assert.equal(response.json().data.id, "dossier-1");
+  }, {
+    salesService: {
+      refreshPersistedState: async (options) => {
+        refreshOptions.push(options);
+      },
+      dossierDetail: () => ({ id: "dossier-1", body: [], citations: [] }),
+    },
+  });
+  assert.deepEqual(refreshOptions, [{ minIntervalMs: 5_000 }]);
+});
+
 test("asynchronous dossier routes return 202 and expose only safe task progress", async () => {
   const calls = [];
   const publicJob = {

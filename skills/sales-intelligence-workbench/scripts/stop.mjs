@@ -8,11 +8,13 @@ async function stopProcess(pidFile, label) {
     return false;
   }
   process.kill(pid, "SIGTERM");
-  const deadline = Date.now() + 10_000;
+  const deadline = Date.now() + 35_000;
   while (Date.now() < deadline && processExists(pid)) {
     await new Promise((resolve) => setTimeout(resolve, 200));
   }
-  if (processExists(pid)) throw new Error(`${label}进程 ${pid} 未能在 10 秒内停止。`);
+  if (processExists(pid)) {
+    throw new Error(`${label}进程 ${pid} 仍在安全结束当前任务，请稍后再次运行 stop.mjs。`);
+  }
   fs.rmSync(pidFile, { force: true });
   return true;
 }

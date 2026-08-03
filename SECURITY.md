@@ -2,7 +2,7 @@
 
 ## Supported scope
 
-The current `v0.9.2` Beta release supports one self-hosted workspace and one local administrator. It includes Supabase Auth, browser and CLI sessions, CSRF protection for cookie-authenticated mutations, and an internal account binding for workspace isolation. It does not expose public registration, email confirmation, password-recovery email, member, or role-management flows.
+The current `v0.10.0` self-hosted open-source release supports one workspace and one local administrator. It includes Supabase Auth, browser and CLI sessions, CSRF protection for cookie-authenticated mutations, and an internal account binding for workspace isolation. It does not expose public registration, email confirmation, password-recovery email, member, or role-management flows.
 
 This is not a managed multi-tenant SaaS release. The default listener remains `127.0.0.1`. Do not expose the backend port directly to the public Internet; place the application behind an HTTPS reverse proxy and complete the deployment checks below.
 
@@ -27,4 +27,4 @@ Rotate any credential that appeared in chat, screenshots, logs, commits, or issu
 - Store backups as private data and test restores on an isolated target.
 - Keep audit events enabled for business writes, Provider probes, and workspace exports; audit payloads must remain metadata-only.
 - Run configuration doctor, database migration smoke checks, the repository test suite, and release verification before upgrading.
-- Do not describe this Beta as a managed multi-tenant SaaS or an SLA-backed service.
+- Do not describe this self-hosted release as a managed multi-tenant SaaS or an SLA-backed service.

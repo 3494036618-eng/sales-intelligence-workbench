@@ -79,7 +79,7 @@ export function createRouter(providerService, options = {}) {
       data: {
         status: runtimePolicy.ready ? "ok" : "degraded",
         service: "sales-intelligence-workbench-api",
-        version: "0.9.2",
+        version: "0.10.0",
         provider_mode: providerMode,
         runtime_ready: runtimePolicy.ready,
       },
@@ -285,7 +285,7 @@ export function createRouter(providerService, options = {}) {
       entity_id: params.enterprise_id,
     })),
     route("GET", /^\/api\/dossiers\/([^/]+)$/, ["dossier_id"], async ({ params }) => ({
-      data: await freshSalesData(() => salesService.dossierDetail(params.dossier_id), { force: true }),
+      data: await freshSalesData(() => salesService.dossierDetail(params.dossier_id), { minIntervalMs: 5_000 }),
       meta: { provider_mode: "mixed" },
     })),
     route("GET", /^\/api\/target-enterprises\/([^/]+)\/materials$/, ["enterprise_id"], async ({ params }) => ({

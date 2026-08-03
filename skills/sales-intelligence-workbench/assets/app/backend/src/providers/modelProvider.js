@@ -1,6 +1,10 @@
 import { createEnvReader } from "../config/runtimeEnv.js";
 import { collectCitationContext, filterCitationIds, hasAnyCitation, sourceLabelsForIds } from "./citationValidator.js";
-import { providerFailure, providerSuccess } from "./providerResult.js";
+import {
+  executeProviderCall,
+  providerFailure,
+  providerSuccess,
+} from "./providerResult.js";
 
 const DEFAULT_BASE_URL = "https://ark.cn-beijing.volces.com/api/plan/v3";
 const DEFAULT_MODEL_NAME = "ark-code-latest";
@@ -136,10 +140,42 @@ function normalizeUsage(usage) {
   return Object.keys(normalized).length ? normalized : null;
 }
 
+function responseStatusFailure(payload) {
+  const status = String(payload?.status || "").trim().toLowerCase();
+  if (!status || status === "completed") return null;
+  if (status === "incomplete") {
+    const reason = String(payload?.incomplete_details?.reason || "unknown").trim();
+    return {
+      code: "incomplete_response",
+      message: `Model response was incomplete (${reason}).`,
+      retryable: reason === "max_output_tokens",
+    };
+  }
+  if (status === "failed") {
+    return {
+      code: "response_failed",
+      message: String(payload?.error?.message || "Model response failed."),
+      retryable: false,
+    };
+  }
+  return {
+    code: "unexpected_response_status",
+    message: `Model response ended with unexpected status: ${status}.`,
+    retryable: false,
+  };
+}
+
+function matchingFunctionCalls(payload, functionName) {
+  return (Array.isArray(payload?.output) ? payload.output : [])
+    .filter((item) => ["function_call", "function_tool_call"].includes(String(item?.type || "")))
+    .filter((item) => String(item?.name || "") === functionName);
+}
+
 export class ModelProvider {
   constructor(options = {}) {
     this.env = options.env || createEnvReader();
     this.fetchImpl = options.fetchImpl || globalThis.fetch;
+    this.sleep = options.sleep;
   }
 
   get apiKey() {
@@ -171,6 +207,10 @@ export class ModelProvider {
 
   get timeoutMs() {
     return Math.max(5000, Math.min(this.env.number("MODEL_TIMEOUT_MS", DEFAULT_TIMEOUT_MS), 300000));
+  }
+
+  get maxRetries() {
+    return Math.max(0, Math.min(this.env.number("MODEL_MAX_RETRIES", 1), 2));
   }
 
   isConfigured() {
@@ -314,6 +354,150 @@ export class ModelProvider {
         raw_ref: requestId ? `model:${requestId}` : null,
         latency_ms: Date.now() - startedAt,
         invalid_content: invalidJsonContent(content),
+      });
+    }
+  }
+
+  async callRequiredFunction(request = {}) {
+    return executeProviderCall(
+      () => this.callRequiredFunctionOnce(request),
+      {
+        max_retries: this.maxRetries,
+        base_delay_ms: 1200,
+        sleep: this.sleep,
+      },
+    );
+  }
+
+  async callRequiredFunctionOnce({
+    system,
+    payload,
+    functionName,
+    functionDescription,
+    parameters,
+    maxTokens,
+    operation = "model_function",
+  }) {
+    if (!this.isConfigured()) {
+      return providerFailure("model", {
+        code: "missing_config",
+        message: "AGENT_PLAN_API_KEY, MODEL_BASE_URL or MODEL_NAME is not configured.",
+      });
+    }
+
+    const body = {
+      model: this.modelName,
+      instructions: system,
+      input: JSON.stringify(payload),
+      max_output_tokens: maxTokens || this.maxTokens,
+      thinking: { type: "disabled" },
+      store: false,
+      tools: [{
+        type: "function",
+        name: functionName,
+        description: functionDescription,
+        strict: true,
+        parameters,
+      }],
+      tool_choice: "required",
+    };
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+    const startedAt = Date.now();
+    let response;
+    let providerPayload;
+    try {
+      response = await this.fetchImpl(`${this.baseUrl}/responses`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${this.apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+      const text = await response.text();
+      providerPayload = text ? JSON.parse(text) : {};
+    } catch (error) {
+      return providerFailure("model", {
+        code: error.name === "AbortError" ? "timeout" : "network_error",
+        message: error.name === "AbortError" ? `${operation} request timed out.` : error.message,
+      }, { latency_ms: Date.now() - startedAt });
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    const providerError = normalizeError(providerPayload);
+    const requestId = providerPayload?.id || providerPayload?.ResponseMetadata?.RequestId || null;
+    if (!response.ok || providerError) {
+      return providerFailure("model", providerError || {
+        code: "http_error",
+        message: `HTTP ${response.status}`,
+      }, {
+        http_status: response.status,
+        request_id: requestId,
+        latency_ms: Date.now() - startedAt,
+      });
+    }
+
+    const statusFailure = responseStatusFailure(providerPayload);
+    if (statusFailure) {
+      return providerFailure("model", statusFailure, {
+        request_id: requestId,
+        raw_ref: requestId ? `model:${requestId}` : null,
+        latency_ms: Date.now() - startedAt,
+        usage: normalizeUsage(providerPayload?.usage),
+      });
+    }
+
+    const calls = matchingFunctionCalls(providerPayload, functionName);
+    if (!calls.length) {
+      const anyFunctionCall = (Array.isArray(providerPayload?.output) ? providerPayload.output : [])
+        .some((item) => ["function_call", "function_tool_call"].includes(String(item?.type || "")));
+      return providerFailure("model", {
+        code: anyFunctionCall ? "unexpected_function_call" : "missing_function_call",
+        message: anyFunctionCall
+          ? `Model called a function other than ${functionName}.`
+          : `Model did not call required function ${functionName}.`,
+      }, {
+        request_id: requestId,
+        raw_ref: requestId ? `model:${requestId}` : null,
+        latency_ms: Date.now() - startedAt,
+        usage: normalizeUsage(providerPayload?.usage),
+      });
+    }
+    if (calls.length !== 1) {
+      return providerFailure("model", {
+        code: "unexpected_function_call",
+        message: `Model called required function ${functionName} ${calls.length} times.`,
+      }, {
+        request_id: requestId,
+        raw_ref: requestId ? `model:${requestId}` : null,
+        latency_ms: Date.now() - startedAt,
+        usage: normalizeUsage(providerPayload?.usage),
+      });
+    }
+
+    try {
+      return providerSuccess("model", {
+        request_id: requestId,
+        model: providerPayload?.model || this.modelName,
+        latency_ms: Date.now() - startedAt,
+        raw_ref: requestId ? `model:${requestId}` : null,
+        parsed: JSON.parse(String(calls[0].arguments || "")),
+        function_call_id: calls[0].call_id || calls[0].id || null,
+        usage: normalizeUsage(providerPayload?.usage),
+      });
+    } catch (error) {
+      return providerFailure("model", {
+        code: "invalid_function_arguments",
+        message: `Model returned invalid function arguments: ${error.message}`,
+      }, {
+        request_id: requestId,
+        raw_ref: requestId ? `model:${requestId}` : null,
+        latency_ms: Date.now() - startedAt,
+        usage: normalizeUsage(providerPayload?.usage),
       });
     }
   }

@@ -29,6 +29,7 @@ test("evidence packs keep stable ids and reject unrelated public results", () =>
           label: "星蓝发布最新公告",
           summary: "星蓝新能源科技有限公司发布最新公告。",
           url: "https://example.org/xinlan?a=1&utm_source=test",
+          site_name: "星蓝官网",
           published_at: "2026-07-20T08:00:00Z",
         },
         {
@@ -47,6 +48,8 @@ test("evidence packs keep stable ids and reject unrelated public results", () =>
   assert.match(pack.items[1].url, /^https:\/\/example\.org\/xinlan\?a=1$/);
   assert.equal(pack.items[0].source_quality_label, "专业权威来源");
   assert.equal(pack.items[1].freshness_label, "近期资料");
+  assert.equal(pack.items[1].site_name, "星蓝官网");
+  assert.equal(evidencePackCitations(pack)[1].site_name, "星蓝官网");
   assert.equal(pack.policy.current_public_count, 1);
   assert.equal(validateProductionEvidencePack(pack).ok, true);
 });
@@ -86,6 +89,58 @@ test("evidence packs retain brand-alias public news without treating it as the l
   const aliasEvidence = pack.items.find((item) => item.label.includes("供应链合作"));
   assert.equal(aliasEvidence.entity_match, "alias_scoped");
   assert.ok(pack.rejected.some((item) => item.label === "其他汽车品牌新闻"));
+});
+
+test("evidence packs derive a scoped brand alias from China investment-company names", () => {
+  const pack = buildDossierEvidencePack({
+    company: {
+      id: "company_bosch_china",
+      name: "博世（中国）投资有限公司",
+    },
+    generatedAt: "2026-07-29T10:00:00.000Z",
+    collected: {
+      professional: [{
+        label: "企业工商数据库",
+        query: "博世（中国）投资有限公司 企业工商信息",
+        summary: "公司名称：博世（中国）投资有限公司；经营范围：机械制造、电子和信息产业投资。",
+      }],
+      public_sources: [{
+        label: "博世发布在华合作项目动态",
+        summary: "博世与合作伙伴发布在华技术合作项目计划。",
+        url: "https://news.example.org/bosch-cooperation",
+        published_at: "2026-07-28T08:00:00Z",
+        query: "博世 2026 合作 项目",
+      }],
+    },
+  });
+
+  const aliasEvidence = pack.items.find((item) => item.source_kind === "public");
+  assert.equal(aliasEvidence.entity_match, "alias_scoped");
+});
+
+test("evidence packs reject verification-gate pages instead of treating them as report sources", () => {
+  const pack = buildDossierEvidencePack({
+    company,
+    generatedAt: "2026-07-29T10:00:00.000Z",
+    collected: {
+      professional: [{
+        label: "企业工商数据库",
+        query: "星蓝新能源科技有限公司 企业工商信息",
+        summary: "公司名称：星蓝新能源科技有限公司；经营范围：新能源汽车相关业务。",
+      }],
+      public_sources: [{
+        label: "星蓝新能源科技有限公司法律风险",
+        summary: "For better experience, please complete the verification process. TIME: 2026-07-29 09:00:00",
+        url: "https://example.org/verification-gate",
+        published_at: "2026-07-28T08:00:00Z",
+      }],
+    },
+  });
+
+  assert.equal(pack.items.length, 1);
+  assert.equal(pack.rejected.length, 1);
+  assert.equal(pack.rejected[0].reason, "content_not_substantive");
+  assert.equal(pack.policy.traceable_public_count, 0);
 });
 
 test("evidence hash ignores collection time but changes with source content", () => {
@@ -156,6 +211,38 @@ test("QA validation derives citations from allowed evidence and rejects fabricat
   assert.deepEqual(evidence.map((item) => item.source_kind).sort(), ["企业档案", "内部资料"]);
   assert.ok(result.errors.some((item) => item.includes("无效引用")));
   assert.ok(result.errors.some((item) => item.includes("缺少有效引用")));
+});
+
+test("QA removes an unrequested gap paragraph and rejects a risk paragraph citing the wrong dossier section", () => {
+  const evidence = [{
+    id: "recent_section",
+    label: "测试企业 销售情报报告 V2 · 近期公开动态",
+    source_kind: "企业档案",
+    source_quality: "verified_dossier",
+    summary: "近期公开动态：2026年7月30日，测试企业发布产品升级公告。",
+  }];
+  const result = validateQaModelAnswer({
+    paragraphs: [{
+      text: "风险：该企业的交付周期需要核验。",
+      citation_ids: ["recent_section"],
+    }, {
+      text: "缺口：还需要补充更多资料。",
+      citation_ids: ["recent_section"],
+    }],
+    insufficient: false,
+  }, evidence, { question: "说明该企业的主要风险。" });
+
+  assert.equal(result.paragraphs.length, 1);
+  assert.ok(result.errors.some((item) => item.includes("风险与关注事项")));
+
+  const requested = validateQaModelAnswer({
+    paragraphs: [{
+      text: "缺口：还需要补充交付记录。",
+      citation_ids: ["recent_section"],
+    }],
+    insufficient: false,
+  }, evidence, { question: "还有哪些资料缺口？" });
+  assert.equal(requested.paragraphs.length, 1);
 });
 
 test("QA evidence reads and ranks the relevant chunk instead of sending one long material blob", () => {
@@ -343,7 +430,7 @@ test("QA answerability rejects unrelated questions even when enterprise evidence
   assert.equal(assessQaAnswerability("今天当地天气怎么样？", evidence).supported, false);
 });
 
-test("runtime evidence policy rejects undated or untraceable latest sources", () => {
+test("runtime evidence policy records public-source gaps without rejecting a legally anchored dossier", () => {
   const pack = buildDossierEvidencePack({
     company,
     generatedAt: "2026-07-21T10:00:00.000Z",
@@ -362,9 +449,29 @@ test("runtime evidence policy rejects undated or untraceable latest sources", ()
 
   const validation = validateProductionEvidencePack(pack);
   assert.equal(pack.data_as_of, null);
+  assert.equal(validation.ok, true);
+  assert.equal(validation.policy.traceable_public_count, 0);
+  assert.equal(validation.policy.current_public_count, 0);
+  assert.equal(validation.policy.legal_entity_anchor_count, 1);
+});
+
+test("runtime evidence policy rejects a professional result that does not anchor the legal entity", () => {
+  const pack = buildDossierEvidencePack({
+    company,
+    generatedAt: "2026-07-21T10:00:00.000Z",
+    collected: {
+      professional: [{
+        label: "企业工商数据库",
+        query: "星蓝新能源科技有限公司 企业工商信息",
+        summary: "该记录仅描述新能源汽车相关业务，没有返回可核对的企业名称或统一社会信用代码。",
+      }],
+    },
+  });
+
+  const validation = validateProductionEvidencePack(pack);
   assert.equal(validation.ok, false);
-  assert.ok(validation.errors.some((item) => item.includes("原始链接")));
-  assert.ok(validation.errors.some((item) => item.includes("180 天")));
+  assert.equal(validation.policy.legal_entity_anchor_count, 0);
+  assert.ok(validation.errors.some((item) => item.includes("目标主体")));
 });
 
 test("evidence packs detect competing critical numbers from contemporaneous sources", () => {
@@ -438,4 +545,63 @@ test("dossier validation requires two sources to agree on a critical number", ()
     ? { ...item, summary: "星蓝新能源科技有限公司注册资本为1000万元。" }
     : item);
   assert.deepEqual(validateDossierModelAnswer(parsed, agreeing).errors, []);
+});
+
+test("dossier validation does not require unrelated sources to pad citation counts", () => {
+  const evidence = [
+    {
+      id: "professional-business",
+      label: "企业工商数据库",
+      source_kind: "专业数据集",
+      independence_key: "datapro:business",
+      summary: "星蓝新能源科技有限公司从事新能源汽车相关业务。",
+    },
+    {
+      id: "professional-market",
+      label: "金融数据库",
+      source_kind: "专业数据集",
+      independence_key: "datapro:finance",
+      summary: "星蓝新能源科技有限公司持续推进新能源业务。",
+    },
+    {
+      id: "public-project",
+      label: "星蓝新能源项目合作公告",
+      source_kind: "联网搜索",
+      independence_key: "official.example.org",
+      summary: "星蓝新能源科技有限公司发布新能源项目合作公告。",
+    },
+    {
+      id: "public-delivery",
+      label: "星蓝新能源设备交付公告",
+      source_kind: "联网搜索",
+      independence_key: "news.example.net",
+      summary: "星蓝新能源科技有限公司披露设备交付进展。",
+    },
+  ];
+  const titles = [
+    "企业与业务概览",
+    "经营与业务动态",
+    "近期公开动态",
+    "风险与关注事项",
+    "销售机会判断",
+    "建议行动",
+  ];
+  const sparse = {
+    body: titles.map((title) => ({
+      text: `${title}：这是由已核验来源支持的完整业务事实说明。`,
+      citation_ids: ["professional-business", "public-project"],
+    })),
+  };
+  const sparseValidation = validateDossierModelAnswer(sparse, evidence);
+  assert.deepEqual(sparseValidation.errors, []);
+
+  const covered = {
+    body: titles.map((title, index) => ({
+      text: `${title}：这是由已核验来源支持的完整业务事实说明。`,
+      citation_ids: index % 2
+        ? ["professional-market", "public-delivery"]
+        : ["professional-business", "public-project"],
+    })),
+  };
+  assert.deepEqual(validateDossierModelAnswer(covered, evidence).errors, []);
 });

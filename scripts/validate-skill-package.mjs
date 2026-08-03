@@ -24,7 +24,6 @@ const requiredSkillFiles = [
   "scripts/doctor.mjs",
   "scripts/start.mjs",
   "scripts/login.mjs",
-  "scripts/reset-password.mjs",
   "scripts/import-feishu.mjs",
   "scripts/verify-business-chain.mjs",
   "references/cookbook-workflow.md",
@@ -57,7 +56,6 @@ assert.match(agent, /\$sales-intelligence-workbench/);
 assert.match(agent, /allow_implicit_invocation:\s*true/);
 assert.match(skill, /onboard\.mjs/);
 assert.match(skill, /setup-openviking\.mjs/);
-assert.match(skill, /reset-password\.mjs/);
 assert.match(skill, /用户侧只输入\s*一枚 Agent Plan Key/);
 assert.match(skill, /## 远程 Skill 入口/);
 const publicSkillCommand = skill.match(
@@ -84,12 +82,17 @@ assert.doesNotMatch(configure, /AUTH_REDIRECT_URL/);
 const login = read("skills/sales-intelligence-workbench/scripts/login.mjs");
 assert.match(login, /--username/);
 assert.match(login, /body: JSON\.stringify\(\{ username, password \}\)/);
-const resetPassword = read("skills/sales-intelligence-workbench/scripts/reset-password.mjs");
-assert.match(resetPassword, /promptSecret\("设置新密码："\)/);
-assert.match(resetPassword, /input: `\$\{password\}\\n`/);
-assert.doesNotMatch(resetPassword, /--password|readOption\(.+password/);
+assert.doesNotMatch(skill + readme, /reset-password|忘记密码|找回密码|重置密码/);
+const install = read("skills/sales-intelligence-workbench/scripts/install.mjs");
+assert.match(install, /AUTH_REFRESH_COOKIE_MAX_AGE === "2592000"/);
+assert.match(install, /AUTH_REFRESH_COOKIE_MAX_AGE: "31536000"/);
+const stop = read("skills/sales-intelligence-workbench/scripts/stop.mjs");
+assert.match(stop, /Date\.now\(\) \+ 35_000/);
+assert.doesNotMatch(stop, /SIGKILL/);
 assert.match(read("skills/sales-intelligence-workbench/scripts/setup-supabase.mjs"), /自动获取 Data API 端点和后端内部凭据/);
-assert.match(workflow, /专业数据集（DataPro）→ 豆包搜索（联网搜索）→ 证据整理与模型生成 → AI Native 应用开发底座（Supabase）/);
+assert.match(workflow, /专业数据集（DataPro）与豆包搜索（联网搜索）有界并发采集、逐查询检查点 → 档案 Agent 六章节事实规划、服务端确定性组装与质量门禁 → AI Native 应用开发底座（Supabase）/);
+assert.match(workflow, /Agent 三次以内/);
+assert.match(workflow, /可重试故障只继续未完成查询/);
 assert.doesNotMatch(workflow, /DataPro → 豆包搜索 → OpenViking → 模型 → Supabase/);
 for (const officialName of [
   "专业数据集（DataPro）",

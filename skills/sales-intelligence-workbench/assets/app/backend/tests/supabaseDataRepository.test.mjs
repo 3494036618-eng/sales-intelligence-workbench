@@ -11,7 +11,7 @@ function createProvider(options = {}) {
     isConfigured: () => true,
     async select(table, query) {
       calls.push({ method: "select", table, query });
-      if (table === "schema_migrations") return [{ version: "202607280002" }];
+      if (table === "schema_migrations") return [{ version: "202607300001" }];
       if (table === "app_workspaces") return [{ id: workspaceId }];
       return options.select?.(table, query) || [];
     },
@@ -202,6 +202,23 @@ test("asynchronous jobs enqueue, claim, heartbeat, cancel safely, release and re
   });
   const claimed = await repository.claimNextJob("worker-1", ["sales_dossier_generation"], 600);
   const heartbeat = await repository.heartbeatJob(claimed.id, "worker-1", "collecting_evidence", 20, 600);
+  const checkpointed = await repository.saveJobCheckpoint(
+    claimed.id,
+    "worker-1",
+    {
+      dossier: {
+        schema_version: 1,
+        company_id: "company-1",
+        evidence_collection: { completed_query_keys: ["datapro:business"] },
+      },
+    },
+    {
+      stage: "collecting_professional",
+      progress: 24,
+      detail: { current: 1, total: 2, message: "正在核验专业资料 1/2" },
+      lease_seconds: 600,
+    },
+  );
   const cancelling = await repository.requestJobCancellation(claimed.id);
   const cancelled = await repository.acknowledgeJobCancellation(claimed.id, "worker-1");
   await repository.releaseJobClaim(claimed.id, "worker-1", { code: "temporary" }, { retry: true, delay_seconds: 5 });
@@ -210,18 +227,30 @@ test("asynchronous jobs enqueue, claim, heartbeat, cancel safely, release and re
   assert.equal(queued.status, "queued");
   assert.equal(claimed.status, "running");
   assert.equal(heartbeat.progress, 20);
+  assert.equal(checkpointed.progress, 20);
   assert.equal(cancelling.stage, "cancelling");
   assert.equal(cancelled.status, "cancelled");
   assert.equal(retried.status, "queued");
-  const rpcCalls = provider.calls.filter((call) => call.method === "rpc").slice(-7);
+  const rpcCalls = provider.calls.filter((call) => call.method === "rpc").slice(-8);
   assert.deepEqual(rpcCalls.map((call) => call.name), [
     "enqueue_sales_job",
     "claim_sales_job",
     "heartbeat_sales_job",
+    "checkpoint_sales_job",
     "request_cancel_sales_job",
     "acknowledge_cancel_sales_job",
     "release_sales_job_claim",
     "retry_sales_job",
   ]);
   assert.ok(rpcCalls.every((call) => call.body.p_workspace_id === workspaceId));
+  const checkpointCall = rpcCalls.find((call) => call.name === "checkpoint_sales_job");
+  assert.equal(checkpointCall.body.p_worker_id, "worker-1");
+  assert.deepEqual(checkpointCall.body.p_progress_detail, {
+    current: 1,
+    total: 2,
+    message: "正在核验专业资料 1/2",
+  });
+  assert.deepEqual(checkpointCall.body.p_checkpoint_patch.dossier.evidence_collection.completed_query_keys, [
+    "datapro:business",
+  ]);
 });

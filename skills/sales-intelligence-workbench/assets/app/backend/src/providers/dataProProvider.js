@@ -2,7 +2,7 @@ import { createEnvReader } from "../config/runtimeEnv.js";
 import { executeProviderCall, providerFailure, providerSuccess } from "./providerResult.js";
 
 const DEFAULT_MCP_URL = "https://datapro.hqd.cn-beijing.volces.com/mcp";
-const DEFAULT_TIMEOUT_MS = 60000;
+const DEFAULT_TIMEOUT_MS = 45000;
 
 function enabled(value) {
   return ["1", "true", "yes", "on"].includes(String(value || "").toLowerCase());

@@ -26,6 +26,7 @@ supabase/.temp/
 # Internal research and historical acceptance evidence are not release assets.
 docs/afp-testing/
 docs/handoff/
+docs/optimization/
 docs/research/
 docs/open-source/
 design-qa.md

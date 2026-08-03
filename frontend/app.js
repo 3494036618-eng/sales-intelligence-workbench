@@ -155,14 +155,19 @@
     };
   }
 
-  function mapDossierFromApi(item) {
+  function mapDossierFromApi(item, options = {}) {
     return {
       id: item.id,
       title: item.title,
-      body: item.summary || "",
-      bodyParagraphs: (item.body || []).map((paragraph) => ({
+      summary: item.summary || "",
+      body: "",
+      bodyParagraphs: (Array.isArray(item.body) ? item.body : []).map((paragraph) => ({
         text: paragraph.text,
         citationIds: paragraph.citation_ids || [],
+        segments: (paragraph.segments || []).map((segment) => ({
+          text: segment.text || "",
+          citationIds: segment.citation_ids || [],
+        })),
       })),
       citations: (item.citations || []).map((source) => ({
         id: source.id,
@@ -170,11 +175,8 @@
         kind: source.source_kind,
         url: isPlaceholderUrl(source.url) ? "" : source.url || "",
         summary: source.summary || source.excerpt || "",
+        siteName: source.site_name || "",
         publishedAt: source.published_at || null,
-        sourceUpdatedAt: source.source_updated_at || null,
-        qualityLabel: source.source_quality_label || "",
-        freshnessLabel: source.freshness_label || "",
-        verificationLabel: source.verification_label || "",
       })),
       versionNo: Number(item.version_no || 1),
       previousDossierId: item.previous_dossier_id || null,
@@ -182,6 +184,7 @@
       dataAsOf: item.data_as_of ?? null,
       generatedAt: item.generated_at || item.created_at || null,
       date: formatTime(item.generated_at || item.created_at, item.date || ""),
+      detailLoadError: Boolean(options.detailLoadError),
     };
   }
 
@@ -215,10 +218,8 @@
     };
   }
 
-  function apiErrorMessage(error, fallback) {
-    const message = error?.message || fallback;
-    const requestId = error?.requestId ? `（请求 ${error.requestId}）` : "";
-    return `${message}${requestId}`;
+  function apiErrorMessage(_error, fallback) {
+    return fallback || "操作没有完成，请稍后重试。";
   }
 
   function escapeHtml(value) {
@@ -228,6 +229,10 @@
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;")
       .replace(/'/g, "&#039;");
+  }
+
+  function isPlaceholderUrl(value) {
+    return /(^https?:\/\/)?(www\.)?example\.(com|test)\b/i.test(String(value || ""));
   }
 
   function splitDisplayParagraphs(value, maxLength = 180) {
@@ -420,7 +425,52 @@
   }
 
   function displaySourceKind(kind) {
-    return /专业数据|专业数据库|工商|招投标/.test(String(kind || "")) ? "专业数据库" : kind || "来源";
+    return /专业数据|专业数据库|工商|招投标/.test(String(kind || ""))
+      ? "专业数据集（DataPro）"
+      : /联网搜索|公开|新闻|公告|媒体|官网/.test(String(kind || ""))
+        ? "联网搜索"
+        : kind || "来源";
+  }
+
+  function sourceSiteName(source) {
+    if (source.siteName) return String(source.siteName).trim();
+    try {
+      return new URL(source.url).hostname.replace(/^www\./i, "");
+    } catch {
+      return "公开网页";
+    }
+  }
+
+  function sourcePublishLabel(source) {
+    const publishedAt = formatTime(source.publishedAt, "");
+    return publishedAt ? `发布于 ${publishedAt}` : "未标注发布时间";
+  }
+
+  function professionalSourceDetails(source) {
+    const knownFieldPattern = /^(?:公司名称|企业名称|统一社会信用代码|注册号|法定代表人|法人姓名|公司组织类型|企业类型|注册地址|成立日期|注册资本|实缴资本|经营状态|登记状态|经营范围|所属行业|参保人数|核准日期|营业期限|自身风险|关联风险|司法案件|涉诉关系|立案信息|开庭公告|法院公告|行政处罚|经营异常|失信被执行人|被执行人|知识产权|专利|商标|著作权|分支机构|股东|主要人员)$/;
+    const details = [];
+    const parts = String(source.summary || "")
+      .split(/[;；]\s*/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+    for (const item of parts) {
+      const match = item.match(/^([^:：]{1,28})[:：]\s*(.+)$/);
+      const label = match?.[1]?.trim() || "";
+      if (match && knownFieldPattern.test(label)) {
+        details.push({ label, value: match[2].trim() });
+      } else if (details.length) {
+        details[details.length - 1].value += `；${item}`;
+      } else {
+        details.push({ label: "数据项", value: item });
+      }
+    }
+    return details.map((item) => {
+      const cleanValue = item.value.replace(/[（(]\s*$/, "").trim();
+      return {
+        ...item,
+        value: /日期|时间/.test(item.label) ? formatTime(cleanValue, cleanValue) : cleanValue,
+      };
+    });
   }
 
   function inferMaterialType(title, explicitType = "") {
@@ -452,6 +502,12 @@
         citationIds: (paragraph.citationIds || [])
           .map((id) => idMap.get(String(id)) || null)
           .filter(Boolean),
+        segments: (paragraph.segments || []).map((segment) => ({
+          ...segment,
+          citationIds: (segment.citationIds || [])
+            .map((id) => idMap.get(String(id)) || null)
+            .filter(Boolean),
+        })),
       })),
     };
   }
@@ -513,14 +569,35 @@
     goal.stats = goalStats(goal.pool.length);
   }
 
+  async function loadDossierDetail(record, attempts = 3) {
+    let lastError = null;
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      try {
+        return mapDossierFromApi(await api(`/dossiers/${encodeURIComponent(record.id)}`));
+      } catch (error) {
+        lastError = error;
+        if (attempt + 1 < attempts) await wait(350 * (attempt + 1));
+      }
+    }
+    throw lastError;
+  }
+
   async function hydrateCompany(companyId, options = {}) {
     if (!companyId) return null;
     const detail = await api(`/target-enterprises/${encodeURIComponent(companyId)}`);
     const mapped = mapCompanyFromApi(detail);
     if (!mapped) return null;
-    const dossierDetails = await Promise.all((detail.dossiers || []).map((record) =>
-      api(`/dossiers/${encodeURIComponent(record.id)}`).then(mapDossierFromApi).catch(() => mapDossierFromApi(record)),
-    ));
+    const existingUpdates = companies[companyId]?.updates || [];
+    let dossierDetailFailures = 0;
+    const dossierDetails = await Promise.all((detail.dossiers || []).map(async (record) => {
+      try {
+        return await loadDossierDetail(record);
+      } catch (error) {
+        dossierDetailFailures += 1;
+        return existingUpdates.find((item) => item.id === record.id && item.bodyParagraphs?.length)
+          || mapDossierFromApi(record, { detailLoadError: true });
+      }
+    }));
     mapped.updates = dossierDetails;
     mapped.library = (detail.materials || []).map(mapMaterialFromApi);
     mapped.qaAnswer = detail.qa?.messages?.find((message) => message.role === "assistant")?.text || mapped.qaAnswer || "";
@@ -529,6 +606,9 @@
     if (state.activeCompanyId === mapped.id
       && (!state.selectedDossierId || !mapped.updates.some((item) => item.id === state.selectedDossierId))) {
       state.selectedDossierId = mapped.updates[0]?.id || "";
+    }
+    if (state.activeCompanyId === mapped.id && dossierDetailFailures) {
+      state.notice = "部分档案详情暂时未加载，系统已自动重试；请稍后刷新页面。";
     }
     if (options.loadJob !== false) await loadLatestDossierJob(mapped.id).catch(() => null);
     return mapped;
@@ -614,7 +694,7 @@
           ${renderTopbar()}
           <main class="connection-state" role="status">
             <h1>${state.bootLoading ? "正在连接销售工作台" : "销售工作台暂不可用"}</h1>
-            <p>${escapeHtml(state.bootLoading ? "正在读取后端业务数据。" : state.bootError)}</p>
+            <p>${escapeHtml(state.bootLoading ? "正在加载工作台数据。" : state.bootError)}</p>
             ${state.bootError ? `<button class="primary-button connection-retry" id="retryBoot" type="button">重新连接</button>` : ""}
           </main>
         </div>
@@ -682,7 +762,6 @@
         <button class="auth-submit" type="submit" ${state.authBusy ? "disabled" : ""}>
           ${state.authBusy ? "请稍候..." : bootstrap ? "设置并进入工作台" : "登录"}
         </button>
-        ${!bootstrap ? `<p class="auth-help">忘记密码时，在本机终端运行 <code>reset-password.mjs</code> 重设。</p>` : ""}
       </form>
     `;
     return `
@@ -743,7 +822,7 @@
               : state.feishuImportError
                 ? `<p class="feishu-import-status is-error" role="alert">${escapeHtml(state.feishuImportError)}</p>`
                 : task
-                  ? `<p class="feishu-import-status ${completed ? "is-success" : task.status === "failed" ? "is-error" : ""}" role="status">${escapeHtml(task.error?.message || task.summary || "正在处理")}</p>`
+                  ? `<p class="feishu-import-status ${completed ? "is-success" : task.status === "failed" ? "is-error" : ""}" role="status">${escapeHtml(task.status === "failed" ? "资料导入没有完成，请检查输入后重试。" : task.summary || "正在处理")}</p>`
                   : ""}
             <div class="feishu-import-actions">
               <button class="secondary-button" id="cancelFeishuImport" type="button">关闭</button>
@@ -914,7 +993,6 @@
 
   function renderCompanyHeader(goal, item) {
     const job = dossierJobForCompany(item.id);
-    const activeJob = isActiveJob(job);
     return `
       <div class="company-header">
         <div class="company-title">
@@ -928,36 +1006,66 @@
           </div>
         </div>
         <div class="header-actions">
-          <button class="primary-button" id="refreshCompany" type="button" ${state.busy || activeJob ? "disabled" : ""}>
-            ${state.busy === "refresh" ? "正在提交" : activeJob ? escapeHtml(job.stage_label || "正在生成档案") : "获取最新档案"}
-          </button>
-          ${renderDossierJobStatus(job)}
+          ${renderDossierJobControl(job)}
           <em class="${state.notice ? "is-notice" : ""}">${state.notice ? escapeHtml(state.notice) : `更新于：${escapeHtml(item.updatedAt || "尚未更新")}`}</em>
         </div>
       </div>
     `;
   }
 
-  function renderDossierJobStatus(job) {
-    if (!job || job.status === "succeeded") return "";
+  function compactDossierStageLabel(job) {
+    const detailMessage = String(job?.stage_detail?.message || "").replace(/\s+/g, " ").trim();
+    if (detailMessage) return detailMessage;
+    const labels = {
+      queued: "正在准备档案",
+      retry_wait: "正在等待自动重试",
+      starting: "正在准备档案",
+      collecting_evidence: "正在查找资料",
+      collecting_professional: "正在核验专业资料",
+      collecting_public: "正在检索公开资料",
+      building_evidence: "正在整理可信资料",
+      validating_evidence: "正在核验资料",
+      generating_dossier: "正在整理档案",
+      validating_dossier: "正在核验档案",
+      persisting_result: "正在保存结果",
+      cancelling: "正在取消",
+    };
+    return labels[job?.stage] || "正在生成档案";
+  }
+
+  function renderDossierJobControl(job) {
+    if (!job || job.status === "succeeded") {
+      return `
+        <button class="primary-button" id="refreshCompany" type="button" ${state.busy ? "disabled" : ""}>
+          ${state.busy === "refresh" ? "正在提交" : "获取最新档案"}
+        </button>
+      `;
+    }
+
     const active = isActiveJob(job);
-    const progress = Math.max(0, Math.min(100, Number(job.progress || 0)));
     const retry = !active && job.retryable
-      ? `<button class="job-inline-action" data-retry-dossier-job="${escapeHtml(job.id)}" type="button">重试</button>`
+      ? `<button class="primary-button dossier-job-retry" data-retry-dossier-job="${escapeHtml(job.id)}" type="button" ${state.busy ? "disabled" : ""}>${job.status === "cancelled" ? "重新生成档案" : "生成失败，重试"}</button>`
       : "";
     const cancel = active && job.stage !== "cancelling"
       ? `<button class="job-inline-action" data-cancel-dossier-job="${escapeHtml(job.id)}" type="button">取消</button>`
       : "";
+
+    if (!active) {
+      return retry || `
+        <button class="primary-button" id="refreshCompany" type="button" ${state.busy ? "disabled" : ""}>
+          重新生成档案
+        </button>
+      `;
+    }
+
     return `
-      <div class="dossier-job-status ${active ? "is-active" : "is-terminal"}" role="status" aria-live="polite">
-        <div class="dossier-job-heading">
-          <span>${escapeHtml(job.stage_label || (active ? "正在处理" : "任务未完成"))}</span>
-          <span class="dossier-job-controls">
-            ${active ? `<strong>${progress}%</strong>` : ""}
-            ${cancel}${retry}
-          </span>
-        </div>
-        ${active ? `<span class="dossier-job-progress" aria-hidden="true"><i style="width:${progress}%"></i></span>` : ""}
+      <div class="dossier-job-control" role="status" aria-live="polite">
+        <button class="primary-button dossier-job-running" type="button" disabled>
+          <span class="dossier-job-spinner" aria-hidden="true"></span>
+          <span>${escapeHtml(compactDossierStageLabel(job))}</span>
+          <span class="dossier-job-flow" aria-hidden="true"></span>
+        </button>
+        ${cancel}
       </div>
     `;
   }
@@ -1073,11 +1181,20 @@
         <h2>${escapeHtml(update.title)}</h2>
         <p class="dossier-timing">资料截至 ${escapeHtml(formatTime(update.dataAsOf, "未知"))} · 生成于 ${escapeHtml(formatTime(update.generatedAt, update.date || "未知"))}</p>
         <div class="dossier-body">
-          ${paragraphs.length ? paragraphs.map(renderDossierParagraph).join("") : `<div class="inline-empty">档案正文暂未加载，请稍后重新打开该企业。</div>`}
+          ${paragraphs.length
+            ? paragraphs.map(renderDossierParagraph).join("")
+            : `<div class="inline-empty">${update.detailLoadError
+              ? "档案详情暂时无法加载，请稍后刷新页面重试。系统不会用摘要冒充正文。"
+              : "档案正文暂未加载，请稍后重新打开该企业。"}</div>`}
         </div>
         <div class="citation-block">
-          <strong>引用来源</strong>
-          ${orderedSources.length ? orderedSources.map(renderCitation).join("") : `<span class="citation-plain">暂无可验证的引用来源。</span>`}
+          <div class="citation-block-head">
+            <strong>资料来源</strong>
+            <span>正文中的编号对应下列来源</span>
+          </div>
+          ${orderedSources.length
+            ? renderCitationGroups(orderedSources)
+            : `<span class="citation-plain">${update.detailLoadError ? "档案详情尚未加载，暂不能展示引用。" : "暂无可验证的引用来源。"}</span>`}
         </div>
       </article>
     `;
@@ -1088,12 +1205,21 @@
     const sectionMatch = raw.match(/^([^：:\n]{1,24})[：:]\s*([\s\S]*)$/);
     const heading = normalizeChineseTypography(sectionMatch?.[1] || "");
     const content = sectionMatch?.[2] || raw;
-    const citations = (paragraph.citationIds || []).map((id) => `<sup>[${escapeHtml(id)}]</sup>`).join("");
-    const displayParagraphs = splitDisplayParagraphs(content);
-    const paragraphHtml = displayParagraphs.map((text, index) => {
-      const references = index === displayParagraphs.length - 1 && citations ? ` ${citations}` : "";
-      return `<p>${escapeHtml(text)}${references}</p>`;
-    }).join("");
+    const renderTextWithCitations = (text, citationIds) => {
+      const citations = (citationIds || [])
+        .map((id) => `<sup>[${escapeHtml(id)}]</sup>`)
+        .join("");
+      const displayParagraphs = splitDisplayParagraphs(text);
+      return displayParagraphs.map((displayText, index) => {
+        const references = index === displayParagraphs.length - 1 && citations ? ` ${citations}` : "";
+        return `<p>${escapeHtml(displayText)}${references}</p>`;
+      }).join("");
+    };
+    const paragraphHtml = paragraph.segments?.length
+      ? paragraph.segments
+        .map((segment) => renderTextWithCitations(segment.text, segment.citationIds))
+        .join("")
+      : renderTextWithCitations(content, paragraph.citationIds);
     if (DOSSIER_SECTION_TITLES.includes(heading)) {
       return `
         <section class="dossier-report-section">
@@ -1107,25 +1233,70 @@
     return paragraphHtml;
   }
 
-  function renderCitation(source) {
-    const label = `[${source.id}] ${displaySourceKind(source.kind)}：${source.label}`;
-    const sourceTime = formatTime(source.sourceUpdatedAt || source.publishedAt, "");
-    const hasDetail = Boolean(source.summary || sourceTime || source.qualityLabel || source.freshnessLabel || source.verificationLabel || source.url);
-    if (!hasDetail) return `<span class="citation-plain">${escapeHtml(label)}</span>`;
-    return `
-      <details class="citation-item">
-        <summary>${escapeHtml(label)}</summary>
-        <div>
-          ${source.summary ? `<p>${escapeHtml(source.summary)}</p>` : ""}
-          <p class="citation-meta">
-            ${sourceTime ? `<span>来源时间：${escapeHtml(sourceTime)}</span>` : ""}
-            ${source.qualityLabel ? `<span>${escapeHtml(source.qualityLabel)}</span>` : ""}
-            ${source.freshnessLabel ? `<span>${escapeHtml(source.freshnessLabel)}</span>` : ""}
-            ${source.verificationLabel ? `<span>${escapeHtml(source.verificationLabel)}</span>` : ""}
-          </p>
-          ${source.url && !isPlaceholderUrl(source.url) ? `<a href="${escapeHtml(source.url)}" target="_blank" rel="noreferrer">打开原始来源 ↗</a>` : ""}
+  function renderCitationGroups(sources) {
+    const groups = [
+      {
+        kind: "professional",
+        title: "专业数据集（DataPro）",
+        items: sources.filter((source) => displaySourceKind(source.kind) === "专业数据集（DataPro）"),
+      },
+      {
+        kind: "web",
+        title: "联网搜索",
+        items: sources.filter((source) => displaySourceKind(source.kind) === "联网搜索"),
+      },
+    ].filter((group) => group.items.length);
+    return groups.map((group) => `
+      <section class="citation-group citation-group-${group.kind}">
+        <div class="citation-group-head">
+          <strong>${escapeHtml(group.title)}</strong>
+          <span>${group.items.length} 条</span>
         </div>
-      </details>
+        <div class="citation-list">
+          ${group.items.map((source) => renderCitation(source, group.kind)).join("")}
+        </div>
+      </section>
+    `).join("");
+  }
+
+  function renderCitation(source, groupKind) {
+    const title = source.label || displaySourceKind(source.kind);
+    if (groupKind === "professional") {
+      const details = professionalSourceDetails(source);
+      return `
+        <div class="citation-source-row citation-source-professional">
+          <b>[${escapeHtml(source.id)}]</b>
+          <div>
+            <strong>${escapeHtml(title)}</strong>
+            ${details.length
+              ? `<details class="professional-source-details">
+                  <summary>查看数据明细</summary>
+                  <dl>
+                    ${details.map((item) => `
+                      <div>
+                        <dt>${escapeHtml(item.label)}</dt>
+                        <dd>${escapeHtml(item.value)}</dd>
+                      </div>
+                    `).join("")}
+                  </dl>
+                </details>`
+              : `<span>当前记录没有可展示的字段明细</span>`}
+          </div>
+        </div>
+      `;
+    }
+    const siteName = sourceSiteName(source);
+    const publishLabel = sourcePublishLabel(source);
+    return `
+      <div class="citation-source-row citation-source-web">
+        <b>[${escapeHtml(source.id)}]</b>
+        <div>
+          ${source.url && !isPlaceholderUrl(source.url)
+            ? `<a href="${escapeHtml(source.url)}" target="_blank" rel="noreferrer">${escapeHtml(title)} ↗</a>`
+            : `<strong>${escapeHtml(title)}</strong>`}
+          <span>${escapeHtml(siteName)} · ${escapeHtml(publishLabel)}</span>
+        </div>
+      </div>
     `;
   }
 
@@ -1338,7 +1509,7 @@
         state.notice = "飞书资料已导入";
         state.materialFilter = task.source_kind === "document" ? "云文档" : "飞书会话";
       } else {
-        state.feishuImportError = task.error?.message || "飞书资料导入失败。";
+        state.feishuImportError = "飞书资料导入没有完成，请检查输入后重试。";
       }
     } catch (error) {
       if (token !== feishuImportPollToken) return;
@@ -1807,7 +1978,7 @@
         if (generation !== bootGeneration) return;
         settled = true;
         state.bootLoading = false;
-        state.bootError = `无法读取后端业务数据：${error.message || "服务连接失败"}`;
+        state.bootError = "工作台暂时无法加载，请确认服务正在运行后重试。";
         render();
       });
     await Promise.race([
@@ -1815,7 +1986,7 @@
       wait(6000).then(() => {
         if (settled || generation !== bootGeneration) return;
         state.bootLoading = false;
-        state.bootError = "后端响应超时，请检查 API 服务和运行配置。";
+        state.bootError = "工作台加载时间较长，请稍后重试。";
         render();
       }),
     ]);

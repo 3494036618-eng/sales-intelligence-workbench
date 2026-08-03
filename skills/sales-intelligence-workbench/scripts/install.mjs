@@ -8,12 +8,14 @@ import {
   ensureDirectories,
   paths,
   processExists,
+  readConfiguration,
   readOption,
   readPid,
   resolveUserPath,
   run,
   serverAddress,
   waitForHealth,
+  writeConfiguration,
 } from "./lib.mjs";
 
 assertNodeVersion();
@@ -72,6 +74,11 @@ try {
 }
 
 process.stdout.write(`应用运行时已安装到 ${paths.installedApp}\n`);
+const installedConfiguration = readConfiguration();
+if (installedConfiguration.AUTH_REFRESH_COOKIE_MAX_AGE === "2592000") {
+  writeConfiguration({ AUTH_REFRESH_COOKIE_MAX_AGE: "31536000" });
+  process.stdout.write("浏览器本机会话保持期已从旧版默认值升级为一年。\n");
+}
 if (!fs.existsSync(paths.credentialsFile) || !fs.existsSync(paths.runtimeFile)) {
   process.stdout.write(`下一步：运行 node ${path.join(paths.skillRoot, "scripts", "configure.mjs")}\n`);
 }

@@ -153,29 +153,6 @@ body {
   background: var(--blue-dark);
 }
 
-.auth-link-button {
-  min-height: 32px;
-  padding: 0;
-  border: 0;
-  color: var(--blue-dark);
-  background: transparent;
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.auth-help {
-  margin: 0;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.6;
-  text-align: center;
-}
-
-.auth-help code {
-  color: var(--text);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-}
-
 .connection-state {
   min-height: calc(100vh - 74px);
   display: grid;
@@ -1084,48 +1061,60 @@ textarea:focus {
   font-weight: 700;
 }
 
-.dossier-job-status {
+.dossier-job-control {
   width: min(320px, 100%);
-  display: grid;
-  gap: 7px;
-  white-space: normal;
-}
-
-.dossier-job-heading,
-.dossier-job-controls {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
-.dossier-job-heading {
-  color: var(--text);
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.dossier-job-controls strong {
-  min-width: 36px;
-  color: var(--blue);
-  text-align: right;
-  font-size: 12px;
-}
-
-.dossier-job-progress {
-  width: 100%;
-  height: 6px;
+.dossier-job-running {
+  position: relative;
+  min-width: 180px;
   overflow: hidden;
-  border-radius: 3px;
-  background: #e8ebf2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
 }
 
-.dossier-job-progress i {
-  display: block;
+.dossier-job-running:disabled {
+  opacity: 1;
+  cursor: default;
+}
+
+.dossier-job-spinner {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  border: 2px solid rgba(255, 255, 255, 0.45);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.dossier-job-flow {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 3px;
+  overflow: hidden;
+}
+
+.dossier-job-flow::after {
+  position: absolute;
+  width: 42%;
   height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, var(--blue), #16a085);
-  transition: width 220ms ease;
+  content: "";
+  background: rgba(255, 255, 255, 0.82);
+  transform: translateX(-120%);
+  animation: dossier-job-flow 1.35s ease-in-out infinite;
+}
+
+.dossier-job-retry {
+  white-space: nowrap;
 }
 
 .job-inline-action {
@@ -1141,10 +1130,6 @@ textarea:focus {
 
 .job-inline-action:hover {
   background: #f4f6fb;
-}
-
-.dossier-job-status.is-terminal .dossier-job-heading {
-  color: #b42318;
 }
 
 .primary-button {
@@ -1725,73 +1710,156 @@ textarea:focus {
 
 .citation-block {
   display: grid;
-  gap: 9px;
+  gap: 12px;
   margin-top: 18px;
   padding-top: 16px;
   border-top: 1px solid var(--line-soft);
 }
 
-.citation-block strong {
+.citation-block-head,
+.citation-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.citation-block-head strong {
   color: var(--ink);
   font-size: 14px;
 }
 
-.citation-block a,
-.citation-block span {
-  color: var(--text);
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-.citation-block a {
-  color: var(--blue);
-  font-weight: 800;
-  text-decoration: none;
-}
-
-.citation-plain,
-.citation-item {
-  padding: 8px 10px;
-  border: 1px solid var(--line-soft);
-  border-radius: 6px;
-  background: var(--surface-soft);
-}
-
-.citation-item summary {
-  color: var(--text);
-  font-size: 13px;
-  font-weight: 700;
-  line-height: 1.5;
-  cursor: pointer;
-}
-
-.citation-item > div {
-  display: grid;
-  gap: 7px;
-  padding-top: 8px;
-}
-
-.citation-item p {
-  margin: 0;
-  color: var(--text);
-  font-size: 12px;
-  line-height: 1.6;
-}
-
-.citation-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 14px;
-}
-
-.citation-meta span {
+.citation-block-head span,
+.citation-group-head span {
   color: var(--muted);
   font-size: 12px;
 }
 
-.citation-meta .is-warning {
-  color: var(--warning-ink, #8a4b08);
+.citation-group {
+  overflow: hidden;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.citation-group-head {
+  padding: 9px 11px;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--surface);
+}
+
+.citation-group-head strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.citation-list {
+  display: grid;
+}
+
+.citation-source-row {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  gap: 8px;
+  padding: 10px 11px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.citation-source-row:last-child {
+  border-bottom: 0;
+}
+
+.citation-source-row > b {
+  color: var(--blue);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.citation-source-row > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.citation-source-row strong,
+.citation-source-row a {
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 13px;
   font-weight: 700;
+  line-height: 1.5;
+  text-decoration: none;
+}
+
+.citation-source-row a {
+  color: var(--blue);
+}
+
+.citation-source-row span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.professional-source-details {
+  margin-top: 2px;
+}
+
+.professional-source-details summary {
+  width: max-content;
+  color: var(--blue);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.6;
+  cursor: pointer;
+}
+
+.professional-source-details dl {
+  display: grid;
+  gap: 0;
+  margin: 8px 0 0;
+  overflow: hidden;
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.professional-source-details dl > div {
+  display: grid;
+  grid-template-columns: minmax(96px, 0.28fr) minmax(0, 1fr);
+  gap: 10px;
+  padding: 7px 9px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.professional-source-details dl > div:last-child {
+  border-bottom: 0;
+}
+
+.professional-source-details dt,
+.professional-source-details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.professional-source-details dt {
+  color: var(--muted);
+}
+
+.professional-source-details dd {
+  color: var(--text);
+}
+
+.citation-plain {
+  padding: 8px 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  background: var(--surface-soft);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .more-button {
@@ -2650,8 +2718,13 @@ textarea:focus {
     width: 100%;
   }
 
-  .dossier-job-status {
+  .dossier-job-control {
     width: 100%;
+  }
+
+  .dossier-job-running,
+  .dossier-job-retry {
+    flex: 1;
   }
 
   .company-title h1 {
@@ -2662,6 +2735,17 @@ textarea:focus {
     width: 54px;
     height: 54px;
     font-size: 28px;
+  }
+
+  .citation-block-head {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .professional-source-details dl > div {
+    grid-template-columns: 1fr;
+    gap: 2px;
   }
 
   .update-row,
@@ -2733,5 +2817,18 @@ textarea:focus {
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+@keyframes dossier-job-flow {
+  to {
+    transform: translateX(340%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dossier-job-spinner,
+  .dossier-job-flow::after {
+    animation-duration: 2.4s;
   }
 }

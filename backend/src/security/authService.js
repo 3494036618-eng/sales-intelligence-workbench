@@ -116,10 +116,12 @@ function auditFilter(value, name, maxLength) {
 
 function safeAuthError(status, body, context = "session") {
   const code = String(body?.error_code || body?.code || body?.error || `auth_http_${status}`);
-  if (status === 400 || status === 401) {
+  const message = String(body?.msg || body?.message || "");
+  const expiredJwt = status === 403 && /(?:bad_jwt|invalid jwt|jwt.{0,40}expired|token.{0,20}expired)/i.test(`${code} ${message}`);
+  if (status === 400 || status === 401 || expiredJwt) {
     return new HttpError(401, "invalid_credentials", "用户名或密码不正确，或登录会话已经过期。");
   }
-  if (status === 422 || /already|registered|exists/i.test(String(body?.msg || body?.message || ""))) {
+  if (status === 422 || /already|registered|exists/i.test(message)) {
     return new HttpError(409, "account_exists", "管理员账号已经创建，请直接登录。");
   }
   return new HttpError(502, "auth_provider_error", "身份服务暂时不可用，请稍后重试。", { provider_code: code });
@@ -154,7 +156,7 @@ export class AuthService {
     this.cookieSecure = enabled(this.env?.value?.("AUTH_COOKIE_SECURE", "false"));
     this.timeoutMs = this.env?.number?.("AUTH_PROVIDER_TIMEOUT_MS", 12000) || 12000;
     this.cacheTtlMs = this.env?.number?.("AUTH_SESSION_CACHE_TTL_MS", 15000) || 15000;
-    this.refreshMaxAge = this.env?.number?.("AUTH_REFRESH_COOKIE_MAX_AGE", 2592000) || 2592000;
+    this.refreshMaxAge = this.env?.number?.("AUTH_REFRESH_COOKIE_MAX_AGE", 31536000) || 31536000;
     this.cache = new Map();
     this.bootstrapPromise = null;
     this.cookieNames = Object.freeze({
@@ -233,7 +235,7 @@ export class AuthService {
       limit: 2,
     });
     if (!Array.isArray(bindings) || bindings.length !== 1) {
-      throw new HttpError(503, "single_user_account_invalid", "本机管理员账号状态异常，请运行密码重置命令检查账号。");
+      throw new HttpError(503, "single_user_account_invalid", "本机管理员账号状态异常，请检查安装配置。");
     }
     const binding = bindings[0];
     const profiles = await this.dataProvider.select("app_users", {
@@ -243,7 +245,7 @@ export class AuthService {
     });
     const username = normalizeUsername(profiles?.[0]?.display_name || "");
     if (!username) {
-      throw new HttpError(503, "single_user_account_invalid", "本机管理员用户名缺失，请运行密码重置命令检查账号。");
+      throw new HttpError(503, "single_user_account_invalid", "本机管理员用户名缺失，请检查安装配置。");
     }
     return { id: binding.user_id, username };
   }
@@ -258,7 +260,7 @@ export class AuthService {
     const result = await this.authRequest(`admin/users/${encodeURIComponent(account.id)}`);
     const user = result?.user || result;
     if (!user?.email) {
-      throw new HttpError(503, "single_user_account_invalid", "本机管理员账号无法登录，请运行密码重置命令检查账号。");
+      throw new HttpError(503, "single_user_account_invalid", "本机管理员账号无法登录，请检查安装配置。");
     }
     return validateEmail(user.email);
   }
@@ -373,7 +375,18 @@ export class AuthService {
     const bearer = authorization.match(/^Bearer\s+(.+)$/i)?.[1]?.trim() || "";
     const cookies = parseCookies(req.headers?.cookie);
     const accessToken = bearer || cookies[this.cookieNames.access] || "";
-    if (!accessToken) return null;
+    if (!accessToken) {
+      if (!cookies[this.cookieNames.refresh]) return null;
+      try {
+        const session = await this.refreshSession(cookies[this.cookieNames.refresh]);
+        this.setSessionCookies(res, session, cookies[this.cookieNames.csrf] || undefined);
+        return { principal: session.principal, source: "cookie" };
+      } catch (refreshError) {
+        this.clearSessionCookies(res);
+        if (refreshError?.status === 403) throw refreshError;
+        return null;
+      }
+    }
     try {
       return {
         principal: await this.verifyAccessToken(accessToken),
@@ -590,19 +603,6 @@ export class AuthService {
       csrf_token: csrfToken,
       user: publicUser(session.principal),
     };
-  }
-
-  async resetOwnerPassword(passwordValue) {
-    if (!this.authEnabled) throw new HttpError(409, "auth_disabled", "当前配置未启用登录。");
-    this.assertConfigured();
-    const password = validatePassword(passwordValue);
-    const account = await this.singleLoginAccount();
-    await this.authRequest(`admin/users/${encodeURIComponent(account.id)}`, {
-      method: "PUT",
-      body: { password },
-    });
-    this.cache.clear();
-    return { updated: true, username: account.username };
   }
 
   async refresh(req, res) {

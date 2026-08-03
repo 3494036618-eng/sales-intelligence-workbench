@@ -82,8 +82,20 @@ test("formal frontend still exposes the complete sales workflow", () => {
   assert.match(appSource, /\/target-enterprises\/\$\{encodeURIComponent\(current\.id\)\}\/qa/);
   assert.match(appSource, /data-cancel-dossier-job/);
   assert.match(appSource, /data-retry-dossier-job/);
-  assert.match(appSource, /job\.stage_label/);
-  assert.match(appSource, /job\.progress/);
+  assert.match(appSource, /function compactDossierStageLabel\(job\)/);
+  assert.match(appSource, /job\?\.stage_detail\?\.message/);
+  assert.match(appSource, /正在等待自动重试/);
+  assert.match(appSource, /正在核验专业资料/);
+  assert.match(appSource, /正在检索公开资料/);
+  assert.match(appSource, /正在查找资料/);
+  assert.match(appSource, /正在核验资料/);
+  assert.match(appSource, /正在整理档案/);
+  assert.match(appSource, /正在保存结果/);
+  assert.match(appSource, /class="dossier-job-spinner"/);
+  assert.match(appSource, /class="dossier-job-flow"/);
+  assert.doesNotMatch(appSource, /job\.progress/);
+  assert.match(styleSource, /@keyframes dossier-job-flow/);
+  assert.match(styleSource, /animation: dossier-job-flow/);
   assert.match(appSource, /window\.sessionStorage\.getItem\(storageKey\)/);
   assert.match(appSource, /clearDossierRequestIdempotencyKey\(current\.id\)/);
   assert.match(appSource, /job\.stage !== "cancelling"/);
@@ -100,28 +112,47 @@ test("dossier versions and citations use API evidence only in formal mode", () =
   assert.match(appSource, /data-dossier="\$\{escapeHtml\(update\.id\)\}"/);
   assert.doesNotMatch(appSource, /与上一版比较|data-compare-dossier|version-comparison|\/compare\//);
   assert.match(appSource, /if \(update\.citations\?\.length\) return update\.citations;\s+return \[\];/);
+  assert.match(appSource, /segments: \(paragraph\.segments \|\| \[\]\)\.map/);
+  assert.match(appSource, /paragraph\.segments\?\.length/);
+  assert.match(appSource, /renderTextWithCitations\(segment\.text, segment\.citationIds\)/);
   assert.match(appSource, /暂无可验证的引用来源/);
-  assert.match(appSource, /source\.qualityLabel/);
-  assert.match(appSource, /source\.freshnessLabel/);
-  assert.match(appSource, /source\.verificationLabel/);
+  assert.match(appSource, /专业数据集（DataPro）/);
+  assert.match(appSource, /联网搜索/);
+  assert.match(appSource, /查看数据明细/);
+  assert.match(appSource, /未标注发布时间/);
+  assert.match(appSource, /target="_blank"/);
+  assert.doesNotMatch(appSource, /source\.qualityLabel/);
+  assert.doesNotMatch(appSource, /source\.freshnessLabel/);
+  assert.doesNotMatch(appSource, /source\.verificationLabel/);
   assert.doesNotMatch(appSource, /source\.conflictLabel|source\.conflict_label/);
   assert.doesNotMatch(appSource, /关键字段存在来源差异/);
   assert.doesNotMatch(appSource, /source\.entityMatch/);
   assert.match(appSource, /source\.summary \|\| source\.excerpt/);
+  assert.match(appSource, /function professionalSourceDetails/);
+  assert.match(appSource, /function renderCitationGroups/);
+  assert.match(appSource, /function sourceSiteName/);
+  assert.match(appSource, /function sourcePublishLabel/);
   assert.doesNotMatch(appSource, /source\.provider/);
   assert.match(appSource, /档案正文暂未加载/);
+  assert.match(appSource, /function isPlaceholderUrl\(value\)/);
+  assert.match(appSource, /example\\\.\(com\|test\)/);
+  assert.match(appSource, /async function loadDossierDetail\(record, attempts = 3\)/);
+  assert.match(appSource, /系统不会用摘要冒充正文/);
+  assert.doesNotMatch(appSource, /detailLoadMessage|isPlaceholderUrl is not defined/);
+  assert.doesNotMatch(appSource, /body: item\.summary \|\| ""/);
+  assert.doesNotMatch(appSource, /\.catch\(\(\) => mapDossierFromApi\(record\)\)/);
 });
 
-test("formal frontend has retryable connection and request-trace errors", () => {
-  assert.match(appSource, /error\.requestId = payload\.meta\?\.request_id \|\| ""/);
-  assert.match(appSource, /const requestId = error\?\.requestId \? `（请求 \$\{error\.requestId\}）` : ""/);
+test("formal frontend retries connections without exposing backend error details", () => {
+  assert.match(appSource, /function apiErrorMessage\(_error, fallback\) \{\s*return fallback \|\| "操作没有完成，请稍后重试。";/);
   assert.match(
     appSource,
     /catch \(error\) \{\s*state\.showNewGoal = false;\s*state\.sidebarNotice = apiErrorMessage\(error, "暂时没能创建销售目标，请稍后再试。"\)/,
   );
   assert.match(appSource, /id="retryBoot"/);
   assert.match(appSource, /\$\("#retryBoot"\)\?\.addEventListener\("click"/);
-  assert.match(appSource, /后端响应超时，请检查 API 服务和运行配置/);
+  assert.match(appSource, /工作台加载时间较长，请稍后重试/);
+  assert.doesNotMatch(appSource, /无法读取后端业务数据|后端响应超时|请求 \$\{error\.requestId\}|task\.error\?\.message/);
 });
 
 test("formal frontend authenticates before loading business data and protects mutations with CSRF", () => {
@@ -140,7 +171,7 @@ test("formal frontend authenticates before loading business data and protects mu
 test("formal frontend exposes one local administrator and no email or member flows", () => {
   assert.doesNotMatch(appSource, /openMemberAdmin|memberInviteForm|\/admin\/members/);
   assert.match(appSource, /设置本机管理员/);
-  assert.match(appSource, /reset-password\.mjs/);
+  assert.doesNotMatch(appSource, /reset-password|忘记密码|找回密码|重置密码/);
   assert.doesNotMatch(appSource, /passwordRecoveryForm|\/auth\/password\/recover|\/auth\/password\/update/);
   assert.doesNotMatch(appSource, /工作区成员|成员管理|成员邀请|找回密码|重置邮件/);
   assert.doesNotMatch(appSource, /SUPABASE_SERVICE_ROLE_KEY|service_role/);
@@ -148,10 +179,12 @@ test("formal frontend exposes one local administrator and no email or member flo
 
 test("formal frontend assets carry the current cache key and responsive runtime styles", () => {
   assert.match(htmlSource, /<title>销售智能工作台<\/title>/);
-  assert.match(htmlSource, /20260729-single-admin/);
+  assert.match(htmlSource, /20260730-source-list/);
   assert.match(htmlSource, /text-format\.js/);
   assert.match(styleSource, /\.version-tabs/);
-  assert.match(styleSource, /\.citation-item/);
+  assert.match(styleSource, /\.citation-group/);
+  assert.match(styleSource, /\.citation-source-row/);
+  assert.match(styleSource, /\.professional-source-details/);
   assert.match(styleSource, /\.qa-answer-body/);
   assert.match(styleSource, /\.qa-answer-paragraph/);
   assert.match(styleSource, /\.qa-citation-anchor/);
