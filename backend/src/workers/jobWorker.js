@@ -18,6 +18,7 @@ function safeError(error) {
   return {
     code: String(error?.code || "worker_execution_failed").slice(0, 120),
     message: String(error?.message || "后台任务执行失败。").slice(0, 500),
+    category: String(error?.category || "workflow").slice(0, 80),
     retryable: Boolean(error?.retryable || Number(error?.status || 0) >= 500),
   };
 }
@@ -29,6 +30,14 @@ function shouldRetryClaim(error) {
     "provider_timeout",
     "supabase_unavailable",
   ].includes(String(error?.code || "")) || Boolean(error?.retryable);
+}
+
+function retryDelaySeconds(error, attemptCount, random = Math.random) {
+  if (String(error?.code || "") === "paid_workflow_concurrency_exceeded") return 30;
+  const attempt = Math.max(1, Number(attemptCount || 1));
+  const base = Math.min(60, 5 * (2 ** Math.max(0, attempt - 1)));
+  const jitter = Math.floor(base * 0.25 * Math.max(0, Math.min(1, Number(random()) || 0)));
+  return base + jitter;
 }
 
 export class JobWorker {
@@ -44,6 +53,7 @@ export class JobWorker {
     this.heartbeatMs = Math.max(5_000, Math.min(30_000, Math.floor((this.leaseSeconds * 1000) / 3)));
     this.jobTypes = options.jobTypes || SUPPORTED_JOB_TYPES;
     this.logger = options.logger || console;
+    this.random = options.random || Math.random;
     this.stopped = false;
   }
 
@@ -80,6 +90,29 @@ export class JobWorker {
       progress = Number(updated.progress ?? progress);
       return updated;
     };
+    const saveCheckpoint = async (checkpointPatch = {}, options = {}) => {
+      if (typeof this.repository.saveJobCheckpoint !== "function") {
+        throw new Error("Persistent job checkpoints are not configured.");
+      }
+      stage = options.stage || stage;
+      progress = Number(options.progress ?? progress);
+      const updated = await this.repository.saveJobCheckpoint(
+        job.id,
+        this.workerId,
+        checkpointPatch,
+        {
+          stage,
+          progress,
+          detail: options.detail || {},
+          lease_seconds: this.leaseSeconds,
+        },
+      );
+      stage = updated.stage || stage;
+      progress = Number(updated.progress ?? progress);
+      job.checkpoint = updated.checkpoint || job.checkpoint || {};
+      job.progress_detail = updated.progress_detail || job.progress_detail || {};
+      return updated;
+    };
     const heartbeatTimer = setInterval(() => {
       if (heartbeatBusy || heartbeatFailure) return;
       heartbeatBusy = true;
@@ -96,6 +129,7 @@ export class JobWorker {
       const result = await this.salesService.executeQueuedJob(job, {
         worker_id: this.workerId,
         report_progress: heartbeat,
+        save_checkpoint: saveCheckpoint,
       });
       if (heartbeatFailure) throw heartbeatFailure;
       return { claimed: true, job_id: job.id, status: "succeeded", result };
@@ -105,7 +139,7 @@ export class JobWorker {
       if (!["succeeded", "failed", "cancelled"].includes(latest?.status)) {
         const released = await this.repository.releaseJobClaim(job.id, this.workerId, safeError(error), {
           retry: shouldRetryClaim(error),
-          delay_seconds: error?.code === "paid_workflow_concurrency_exceeded" ? 30 : 5,
+          delay_seconds: retryDelaySeconds(error, latest?.attempt_count || job.attempt_count, this.random),
         });
         finalStatus = released?.status || finalStatus;
       }

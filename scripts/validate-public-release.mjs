@@ -27,7 +27,6 @@ const requiredPaths = [
   "SECURITY.md",
   "THIRD_PARTY_NOTICES.md",
   "backend/.env.example",
-  "backend/scripts/reset-local-password.mjs",
   "docs/README.md",
   "docs/api/api-contract.md",
   "docs/database/supabase-schema.md",
@@ -35,7 +34,6 @@ const requiredPaths = [
   "package-lock.json",
   "package.json",
   "skills/sales-intelligence-workbench/SKILL.md",
-  "skills/sales-intelligence-workbench/scripts/reset-password.mjs",
 ];
 const forbiddenFilePatterns = [
   /^\.DS_Store$/i,
@@ -191,10 +189,6 @@ const envExample = fs.readFileSync(path.join(root, "backend", ".env.example"), "
 const frontendApp = fs.readFileSync(path.join(root, "frontend", "app.js"), "utf8");
 const frontendStyles = fs.readFileSync(path.join(root, "frontend", "styles.css"), "utf8");
 const authService = fs.readFileSync(path.join(root, "backend", "src", "security", "authService.js"), "utf8");
-const resetPassword = fs.readFileSync(
-  path.join(root, "skills", "sales-intelligence-workbench", "scripts", "reset-password.mjs"),
-  "utf8",
-);
 const salesService = fs.readFileSync(path.join(root, "backend", "src", "services", "salesService.js"), "utf8");
 const canonicalSkillUrl = `https://github.com/3494036618-eng/sales-intelligence-workbench/blob/v${packageJson.version}/skills/sales-intelligence-workbench/SKILL.md`;
 
@@ -209,6 +203,35 @@ for (const officialName of [
 ]) {
   for (const [label, text] of [["README", readme], ["Skill", skill], ["Cookbook", workflow]]) {
     if (!text.includes(officialName)) issues.push(`${label} is missing official product name: ${officialName}`);
+  }
+}
+for (const [label, text, requiredPhrases] of [
+  ["README", readme, [
+    "### 初始化 Agent 记忆（OpenViking）",
+    "### 初始化 AI Native 应用开发底座（Supabase）",
+    "少量 Agent Plan 模型、专业数据集（DataPro）和豆包搜索（联网搜索）用量",
+  ]],
+  ["Skill", skill, [
+    "## 5. 初始化 Agent 记忆（OpenViking）",
+    "AI Native 应用开发底座（Supabase）写入",
+    "Agent 记忆（OpenViking）新资源创建",
+  ]],
+  ["Cookbook", workflow, [
+    "`专业数据集`、`豆包搜索`、`Agent 记忆`",
+    "`AI Native 应用开发底座`",
+    "Agent 记忆（OpenViking）live doctor",
+  ]],
+]) {
+  for (const phrase of requiredPhrases) {
+    if (!text.includes(phrase)) issues.push(`${label} is missing official user-facing name: ${phrase}`);
+  }
+}
+for (const [label, text] of [["README", readme], ["Skill", skill], ["Cookbook", workflow]]) {
+  if (/^#{2,3} 初始化 (?:OpenViking|Supabase)(?: 记忆库)?$/m.test(text)) {
+    issues.push(`${label} exposes an internal-only capability heading`);
+  }
+  if (/少量模型、DataPro 和搜索用量|真实资料写入 Supabase 与 OpenViking/.test(text)) {
+    issues.push(`${label} uses internal capability names in user guidance`);
   }
 }
 for (const [label, text] of [
@@ -238,16 +261,11 @@ if (/password\/recover|password\/update|找回密码|重置邮件|工作区成�
 if (!/internalOwnerEmail/.test(authService) || !/email_confirm:\s*true/.test(authService)) {
   issues.push("single-administrator bootstrap is not server-confirmed");
 }
-if (!/reset-password\.mjs/.test(readme) || !/reset-password\.mjs/.test(skill)) {
-  issues.push("README or Skill is missing the local password reset command");
+if (/reset-password|忘记密码|找回密码|重置密码/.test(readme + skill + apiContract + providerConfiguration)) {
+  issues.push("public guidance exposes a password recovery flow");
 }
 if (/AUTH_REDIRECT_URL|自有 SMTP|密码恢复依赖/.test(readme + skill + deployment + providerConfiguration)) {
   issues.push("public guidance still requires email password recovery");
-}
-if (!/promptSecret\("设置新密码："\)/.test(resetPassword)
-  || !/input:\s*`\$\{password\}\\n`/.test(resetPassword)
-  || /--password|readOption\(.+password/.test(resetPassword)) {
-  issues.push("local password reset does not keep the password out of shell arguments");
 }
 if (/fixtures\/salesData|salesSeedData|demoProfessionalSources|demoPublicSources|allow_fixture_data|allow_provider_fallback/.test(salesService)) {
   issues.push("SalesService contains runtime fixture or provider-fallback logic");

@@ -15,11 +15,11 @@
 | --- | --- | --- |
 | 描述销售痛点 | 询问销售目标、客户范围、资料来源和部署方式 | `setup.mjs` 已记录业务范围 |
 | 配置 Agent Plan | 用户只输入统一 Key，配置 Agent Plan 模型，并开启专业数据集（DataPro）、豆包搜索（联网搜索）、Agent 记忆（OpenViking）和 AI Native 应用开发底座（Supabase） | 套餐与能力卡片配置完整 |
-| 连接 Agent 记忆（OpenViking） | 自动复用或经确认创建记忆库，等待 READY 并私密保存内部连接信息 | 用户未输入第二个 Key，OpenViking live doctor 通过 |
-| 准备 AI Native 应用开发底座（Supabase） | 用户完成火山账号 OAuth，脚本自动发现 Agent Plan Workspace、获取内部连接并应用版本化迁移 | 用户未输入 Supabase Key/AK-SK，Workspace 属性、表结构和回读验证通过 |
-| 获取历史资料 | 由 Codex CLI 调度用户态飞书 CLI 读取获授权资料 | 至少一次真实资料写入 Supabase 与 OpenViking |
+| 连接 Agent 记忆（OpenViking） | 自动复用或经确认创建记忆库，等待 READY 并私密保存内部连接信息 | 用户未输入第二个 Key，Agent 记忆（OpenViking）live doctor 通过 |
+| 准备 AI Native 应用开发底座（Supabase） | 用户完成火山账号 OAuth，脚本自动发现 Agent Plan Workspace、获取内部连接并应用版本化迁移 | 用户未输入 Supabase Key/AK-SK，AI Native 应用开发底座（Supabase）Workspace 属性、表结构和回读验证通过 |
+| 获取历史资料 | 由 Codex CLI 调度用户态飞书 CLI 读取获授权资料 | 至少一次真实资料写入 AI Native 应用开发底座（Supabase）与 Agent 记忆（OpenViking） |
 | 搭建工作台 | 安装随 Skill 发布、经过测试的完整前后端模板 | API 与独立 Worker 同时健康 |
-| 生成最新档案 | 专业数据集（DataPro）→ 豆包搜索（联网搜索）→ 证据整理与模型生成 → AI Native 应用开发底座（Supabase） | 档案、引用、Provider Run 和版本记录可回读；飞书资料和 OpenViking 不作为外部事实来源 |
+| 生成最新档案 | 专业数据集（DataPro）与豆包搜索（联网搜索）有界并发采集、逐查询检查点 → 档案 Agent 六章节事实规划、服务端确定性组装与质量门禁 → AI Native 应用开发底座（Supabase） | 六章完整档案、逐段引用、Agent 三次以内的规划轨迹和版本记录可回读；可重试故障只继续未完成查询；飞书资料和 Agent 记忆（OpenViking）不作为外部事实来源；失败不保存或模板重建替代报告 |
 | 资料问答 | 只基于企业档案、历史资料和实际引用检索后回答 | 回答有逐段引用，且问答与用量记录持久化 |
 | 持续迭代 | 增量导入、重新生成、版本比较、备份恢复 | 重启后可读，增量和恢复验收通过 |
 
@@ -55,9 +55,9 @@ node {baseDir}/scripts/setup.mjs --json
 ## 不得宣称完成的情况
 
 - 只安装了页面，没有真实 API 或 Worker。
-- 使用了普通按量 Supabase Workspace，而不是 AI Native 应用开发底座（Supabase）的 Agent Plan Workspace。
+- 使用了普通按量 Workspace，而不是 AI Native 应用开发底座（Supabase）的 Agent Plan Workspace。
 - 配置存在，但没有做全量真实诊断。
-- OpenViking 只写未搜，或只搜未写。
+- Agent 记忆（OpenViking）只写未搜，或只搜未写。
 - 飞书资料没有经过用户授权。
 - 档案或问答使用固定数据、静态引用或不可核验来源。
 - 没有执行真实企业搜索、档案、问答和持久化回读。

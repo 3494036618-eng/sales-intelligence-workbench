@@ -113,7 +113,7 @@ export function getProviderStatus(options = {}) {
         mcp_url: env.value("DATAPRO_MCP_URL") || DEFAULTS.DATAPRO_MCP_URL,
         run_enabled: ["1", "true", "yes", "on"].includes(String(env.value("DATAPRO_RUN_ENABLED", "false")).toLowerCase()),
         max_sources: env.number("DATAPRO_MAX_SOURCES", 4),
-        timeout_ms: env.number("DATAPRO_TIMEOUT_MS", 60000),
+        timeout_ms: env.number("DATAPRO_TIMEOUT_MS", 45000),
         max_retries: env.number("DATAPRO_MAX_RETRIES", 1),
       },
     }),

@@ -132,8 +132,49 @@ test("first-run setup creates one confirmed local administrator without exposing
   assert.equal(createBody.user_metadata.username, "测试用户");
   assert.equal(response.headers["set-cookie"].length, 3);
   assert.match(response.headers["set-cookie"][0], /siw_access=.*HttpOnly.*SameSite=Strict/);
-  assert.match(response.headers["set-cookie"][1], /siw_refresh=.*HttpOnly.*SameSite=Strict/);
+  assert.match(response.headers["set-cookie"][1], /siw_refresh=.*Max-Age=31536000.*HttpOnly.*SameSite=Strict/);
   assert.doesNotMatch(response.headers["set-cookie"].join(" | "), /service-role-secret/);
+});
+
+test("a valid long-lived cookie restores login after the short-lived access cookie expires", async () => {
+  const provider = dataProviderFixture("owner");
+  const authFetch = authFetchFixture();
+  const service = createService(provider, authFetch);
+  const response = responseRecorder();
+
+  const auth = await service.authenticateRequest({
+    headers: {
+      cookie: "siw_refresh=refresh-token; siw_csrf=csrf-token",
+    },
+  }, response);
+
+  assert.equal(auth.source, "cookie");
+  assert.equal(auth.principal.username, "测试用户");
+  assert.ok(authFetch.calls.some(
+    (call) => call.pathname.endsWith("/token")
+      && call.search.includes("grant_type=refresh_token"),
+  ));
+  assert.match(response.headers["set-cookie"][0], /siw_access=refreshed-access-token/);
+  assert.match(response.headers["set-cookie"][1], /siw_refresh=rotated-refresh-token.*Max-Age=31536000/);
+});
+
+test("an expired Supabase JWT is reported as an expired session so clients can refresh", async () => {
+  const provider = dataProviderFixture("owner");
+  const service = createService(provider, {
+    async fetch() {
+      return new Response(JSON.stringify({
+        error_code: "bad_jwt",
+        msg: "invalid JWT: token is expired",
+      }), { status: 403 });
+    },
+  });
+
+  await assert.rejects(
+    () => service.authenticateRequest({
+      headers: { authorization: "Bearer expired-access-token" },
+    }, responseRecorder()),
+    (error) => error.status === 401 && error.code === "invalid_credentials",
+  );
 });
 
 test("username login keeps authorization internal and supports the existing account binding", async () => {
@@ -210,18 +251,4 @@ test("CLI login and refresh return only user-scoped bearer sessions", async () =
   assert.equal(refreshed.access_token, "refreshed-access-token");
   assert.equal(refreshed.refresh_token, "rotated-refresh-token");
   assert.equal(refreshed.expires_in, 7200);
-});
-
-test("local password reset updates the sole administrator through the server-side auth API", async () => {
-  const provider = dataProviderFixture("owner");
-  const authFetch = authFetchFixture();
-  const service = createService(provider, authFetch);
-
-  const result = await service.resetOwnerPassword("a-new-secure-password");
-
-  assert.deepEqual(result, { updated: true, username: "测试用户" });
-  const update = authFetch.calls.find(
-    (call) => call.pathname.endsWith(`/admin/users/${userId}`) && call.method === "PUT",
-  );
-  assert.deepEqual(JSON.parse(update.body), { password: "a-new-secure-password" });
 });

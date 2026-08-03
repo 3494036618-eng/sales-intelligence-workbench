@@ -5,6 +5,18 @@ import { ProviderRunStore } from "../observability/providerRunStore.js";
 import { PaidWorkflowGuard } from "../limits/paidWorkflowGuard.js";
 import { ProviderCircuitBreaker } from "../limits/providerCircuitBreaker.js";
 import {
+  buildDossierAgentContext,
+  DossierAgent,
+  dossierSourceUsageErrors,
+} from "../agents/dossierAgent.js";
+import {
+  deriveEvidenceDataAsOf,
+  extractGroundingDates,
+  extractGroundingNumbers,
+  groundedTextErrors,
+} from "../evidence/claimGrounding.js";
+import { compileDossierEvidenceAtoms } from "../evidence/dossierEvidenceCompiler.js";
+import {
   analyzeQaQuestion,
   assessQaAnswerability,
   buildDossierEvidencePack,
@@ -13,6 +25,7 @@ import {
   evidencePackCitations,
   fuseQaRetrievalContexts,
   makeDossierFingerprint,
+  resolveCompanyEntity,
   validateDossierModelAnswer,
   validateProductionEvidencePack,
   validateQaModelAnswer,
@@ -58,7 +71,8 @@ const DOSSIER_INTERNAL_META_PATTERNS = Object.freeze([
   /(?:已|可)核验的(?:风险|信息|数据|来源|经营|变化|事项)/,
 ]);
 const DOSSIER_EVIDENCE_DEBRIS_PATTERNS = Object.freeze([
-  /查看更多(?:相关)?|立即注册|免费查看|点击查看|登录后查看|打开\s*(?:APP|客户端)/i,
+  /查看详情|查看更多(?:相关)?|立即注册|免费查看|点击查看|登录后查看|打开\s*(?:APP|客户端)/i,
+  /<\/?(?:table|thead|tbody|tr|th|td)\b/i,
   /(?:^|[\s：:])Untitled(?:[\s。；]|$)/i,
   /来源返回可引用信息/,
   /\b20\d{2}年\d{1,2}月\d{1,2}日\s+\d{1,2}:\d{2}\b/u,
@@ -66,15 +80,38 @@ const DOSSIER_EVIDENCE_DEBRIS_PATTERNS = Object.freeze([
   /[（(]来源[：:][^）)]{1,80}[）)]/u,
 ]);
 const DOSSIER_LOW_VALUE_PUBLIC_SOURCE_PATTERNS = Object.freeze([
+  /for better experience.{0,80}(?:verification|verify)/iu,
+  /(?:complete|pass).{0,40}(?:the )?verification process/iu,
+  /(?:verify you are human|captcha|access denied|robot check|security check)/iu,
+  /(?:请|需要).{0,16}(?:完成|通过).{0,12}(?:人机|安全|访问|滑动)?验证/iu,
+  /(?:人机验证|安全验证|访问验证|滑动验证|验证码页面|页面不存在|内容已下线)/iu,
   /(?:网站|官网|网页|站群)(?:建设|设计|制作|改版|升级)(?:案例|服务|项目|方案)?/iu,
   /(?:建站|SEO|数字营销|品牌网站).{0,24}(?:案例|服务商|公司|解决方案)/iu,
   /(?:客户案例|成功案例).{0,24}(?:网站|官网|网页|建站)/iu,
   /(?:我们|小伙伴们|项目团队).{0,32}(?:网站|官网).{0,32}(?:上线|交付|建设)/iu,
   /(?:全新|新版|品牌)?官网(?:全面)?(?:焕新|上线).{0,36}(?:网站建设|建站|网页设计)/iu,
+  /(?:杀人诛心|让对方下不来台|狠狠打脸|瞬间打脸|当场傻眼|彻底慌了|坐不住了|真相曝光|惊天内幕)/iu,
 ]);
 const DOSSIER_ACTION_TERMS = /发布|公告|披露|签署|合作|中标|招标|采购|投产|量产|扩产|建设|回购|融资|研发|推出|上线|召回|处罚|诉讼|失信|经营异常|监管|交付|供应链|营收|利润|销量|市占率/;
 const DOSSIER_RISK_TERMS = /企业风险数据库|风险事项|行政处罚|司法诉讼|失信被执行|限制高消费|经营异常|监管处罚|产品召回|安全事故|供应中断|交付延期|合规整改/;
 const DOSSIER_SPECIFIC_RISK_TERMS = /行政处罚|司法诉讼|失信被执行|限制高消费|经营异常|监管处罚|产品召回|安全事故|供应中断|交付延期|交付周期延长|被罚|索赔|赔偿/;
+const DOSSIER_COMPANY_WIDE_INFERENCE = /(?:说明|表明|显示|可见|由此可见)[^。！？\n]{0,48}(?:订单结构|客户结构|业务结构|收入结构|采购结构|项目结构)[^。！？\n]{0,36}(?:为主|集中|分散|偏[大小高低]|单一|多元|稳定|不稳定|依赖)/u;
+const DOSSIER_BUSINESS_TRAJECTORY_INFERENCE = /(?:业务|能力|产品|市场)[^。！？\n]{0,16}(?:(?:已|正)?(?:从|由)[^。！？\n]{1,36}(?:扩展|转向|升级|延伸)(?:到|至|为)|(?:布局)?(?:延伸|扩展)(?:到|至))/u;
+const DOSSIER_RECENT_DEMAND_INFERENCE = /(?:采购|配套|交付|项目|资源)[^。！？\n]{0,12}(?:需求|意向)[^。！？\n]{0,20}(?:活跃|明确|形成|增加|释放|旺盛|存在)/u;
+const DOSSIER_SENTENCE_PREDICATE_TERMS = /(?:为|是|成立|设立|注册|位于|经营|主营|从事|提供|覆盖|包含|涉及|专注|聚焦|布局|拥有|具备|采用|应用|承担|承接|生产|制造|销售|投资|收购|发布|披露|签署|合作|中标|招标|采购|建设|上线|推出|新增|更新|升级|交付|部署|扩展|扩大|进入|成为|列为|入选|获评|增长|提升|保持|减少|下降|实现|达到|存在|需要|需|应当|应|可以|可|建议|确认|核实|核验|准备|跟进|联系|验证|判断|表明|显示|反映|计划|推进|开展|完成|获得|发生|面临|影响|有助于|属于|形成|支持|服务于|负责|拟)/u;
+const DOSSIER_TITLE_FRAGMENT_PATTERNS = Object.freeze([
+  /(?:有限责任公司|股份有限公司|集团|公司)\s*[-—|]\s*(?:最新|近期)?.{0,24}(?:结果|公告|新闻|动态|发布)$/u,
+  /(?:最新|近期).{0,24}(?:中标|招标|采购|合作|签约|融资|处罚|诉讼)(?:结果)?(?:发布|公告)$/u,
+  /(?:中标|招标|采购|合作|签约|融资|处罚|诉讼)(?:结果|公告|新闻|动态)$/u,
+]);
+const DOSSIER_GENERIC_TEMPLATE_PATTERNS = Object.freeze([
+  /上述业务动作指向.{0,40}(?:经营与技术方向|相关方向)/u,
+  /当前信息更适合作为.{0,30}背景材料/u,
+  /可优先验证.{0,40}相关的采购、技术协同或项目交付场景/u,
+  /企业近期发布产品升级公告并需要继续关注/u,
+  /可进一步核验重点产品线/u,
+  /需持续关注相关风险/u,
+]);
 
 function safeValidationErrors(value, limit = 16) {
   return firstJsonArray(value)
@@ -117,12 +154,33 @@ function hasDossierEvidenceDebris(value) {
   return DOSSIER_EVIDENCE_DEBRIS_PATTERNS.some((pattern) => pattern.test(text));
 }
 
+function isQuestionLikeDossierText(value) {
+  const text = stripDossierSectionTitle(value)
+    .replace(/[。！？!?]+$/gu, "")
+    .trim();
+  if (!text || text.length > 120) return false;
+  if (/[？?]\s*$/u.test(stripDossierSectionTitle(value))) return true;
+  const interrogative = text.match(/是否|有无|有没有|能否|可否|如何|为什么|为何|怎样|怎么/u);
+  if (!interrogative) return false;
+  const prefix = text.slice(0, interrogative.index);
+  return !/(?:需要|需|应当|应|建议|确认|核实|核验|评估|判断|了解|询问|联系|验证|调查)/u.test(prefix);
+}
+
 function dossierPointQualityErrors(value) {
   const errors = [];
   if (hasDossierEvidenceDebris(value)) errors.push("包含搜索站点模板或引流文字");
+  if (isQuestionLikeDossierText(value)) errors.push("把检索问题或问句当作企业事实");
   if (hasUnbalancedDossierPunctuation(value)) errors.push("存在未闭合的括号、引号或方括号");
   if (hasTruncatedDossierNumber(value)) errors.push("存在缺少单位或上下文的截断数字");
   return errors;
+}
+
+function isSubstantiveDossierSummary(value) {
+  const text = compactText(value, 360);
+  return text.length >= 40
+    && !hasBadDisplayText(text)
+    && !hasDossierInternalMetaText(text)
+    && dossierPointQualityErrors(text).length === 0;
 }
 
 function stripDossierSectionTitle(value) {
@@ -190,11 +248,35 @@ function dossierFactUnits(value) {
   return stripDossierSectionTitle(value)
     .split(/(?:\n+|[。！？；]\s*)/u)
     .map((item) => item.replace(/^\d{1,2}[.、]\s*/u, "").trim())
-    .filter((item) => item.length >= 24)
+    .filter((item) => item.length >= 12)
     .map((item) => item
       .toLowerCase()
       .replace(/\[[0-9]+\]/gu, "")
       .replace(/[\s，。；：！？、,.!?;:'"“”‘’（）()【】[\]《》<>-]/gu, ""));
+}
+
+function dossierSentenceUnits(value) {
+  return stripDossierSectionTitle(value)
+    .split(/(?:\n+|[。！？]\s*)/u)
+    .map((item) => item.replace(/^\d{1,2}[.、]\s*/u, "").trim())
+    .filter(Boolean);
+}
+
+function dossierSentenceQualityErrors(value) {
+  const errors = [];
+  for (const sentence of dossierSentenceUnits(value)) {
+    if (DOSSIER_TITLE_FRAGMENT_PATTERNS.some((pattern) => pattern.test(sentence))) {
+      errors.push("包含被当作正文的搜索标题或事件标题残片");
+      continue;
+    }
+    if (!DOSSIER_SENTENCE_PREDICATE_TERMS.test(sentence)) {
+      errors.push("包含缺少明确陈述或行动谓语的名词片段");
+    }
+  }
+  if (DOSSIER_GENERIC_TEMPLATE_PATTERNS.some((pattern) => pattern.test(String(value || "")))) {
+    errors.push("包含不能直接形成销售结论的通用模板话术");
+  }
+  return [...new Set(errors)];
 }
 
 function dossierBigramSimilarity(left, right) {
@@ -227,8 +309,11 @@ function dossierSectionContentErrors(body) {
   DOSSIER_SECTION_TITLES.forEach((title, index) => {
     const text = String(body[index]?.text || "");
     const content = stripDossierSectionTitle(text);
-    if (content.length < 24) {
-      errors.push(`${title}缺少足够的业务事实或行动信息`);
+    if (!content) {
+      errors.push(`${title}缺少正文`);
+    }
+    if (content.length > 1200) {
+      errors.push(`${title}超过 1200 个字符的异常输出保护上限`);
     }
     const incompleteLines = content
       .split(/\n+/u)
@@ -242,6 +327,9 @@ function dossierSectionContentErrors(body) {
       errors.push(`${title}包含仅供系统内部使用的检索或证据诊断话术`);
     }
     dossierPointQualityErrors(content).forEach((error) => {
+      errors.push(`${title}${error}`);
+    });
+    dossierSentenceQualityErrors(content).forEach((error) => {
       errors.push(`${title}${error}`);
     });
   });
@@ -285,28 +373,46 @@ function isUsablePublicDossierCitation(item) {
   );
 }
 
-function dossierSectionSourcePolicy(citations) {
+function dossierSectionSourcePolicy(citations, company = null) {
   const professional = dossierSourceIds(
     citations,
     (item) => item.source_kind === "专业数据集" && isUsableProfessionalDossierCitation(item),
   );
   const web = dossierSourceIds(
     citations,
-    (item) => item.source_kind === "联网搜索" && isUsablePublicDossierCitation(item),
+    (item) => (
+      item.source_kind === "联网搜索"
+      && isUsablePublicDossierCitation(item)
+      && (
+        !company
+        || isRecentPublicDossierCitation(item, concisePublicPoint(item), company)
+      )
+    ),
   );
   const business = dossierSourceIds(
     citations,
-    (item) => (
-      item.source_kind === "专业数据集"
-      && /企业工商数据库/.test(String(item.label || ""))
-      && isUsableProfessionalDossierCitation(item)
-    ),
+    (item) => {
+      if (
+        item.source_kind !== "专业数据集"
+        || !/企业工商数据库/.test(String(item.label || ""))
+        || !isUsableProfessionalDossierCitation(item)
+      ) return false;
+      if (!company) return true;
+      const record = dossierBusinessEntityRecord(item);
+      const targetName = String(company?.name || company?.legal_name || "").trim();
+      return Boolean(
+        record
+        && targetName
+        && normalizeLegalEntityName(record.name) === normalizeLegalEntityName(targetName)
+      );
+    },
   );
   const risk = dossierSourceIds(
     citations,
     (item) => (
       item.source_kind === "专业数据集"
       && /企业风险数据库/.test(String(item.label || ""))
+      && !dossierBusinessEntityRecord(item)
       && isUsableProfessionalDossierCitation(item)
     ),
   );
@@ -315,14 +421,20 @@ function dossierSectionSourcePolicy(citations) {
     (item) => (
       item.source_kind === "专业数据集"
       && /金融数据库|汽车销量数据库|科研学术数据搜索服务/.test(String(item.label || ""))
+      && !dossierBusinessEntityRecord(item)
       && isUsableProfessionalDossierCitation(item)
     ),
   );
-  return { professional, web, business, risk, market };
+  const businessDynamics = market.size
+    ? new Set(market)
+    : web.size >= 2
+      ? new Set(web)
+      : new Set();
+  return { professional, web, business, risk, market, businessDynamics };
 }
 
-function dossierSectionSourceErrors(body, citations) {
-  const policy = dossierSectionSourcePolicy(citations);
+function dossierSectionSourceErrors(body, citations, company = null) {
+  const policy = dossierSectionSourcePolicy(citations, company);
   const errors = [];
   const usesAny = (index, ids) => (
     ids.size > 0 && (body[index]?.citation_ids || []).some((id) => ids.has(String(id)))
@@ -332,21 +444,250 @@ function dossierSectionSourceErrors(body, citations) {
   };
 
   requireWhenAvailable(0, policy.business, "企业与业务概览必须优先引用企业工商数据库");
-  requireWhenAvailable(1, policy.market.size ? policy.market : policy.professional, "经营与业务动态必须优先引用语义匹配的专业数据库");
+  requireWhenAvailable(1, policy.market, "经营与业务动态必须优先引用语义匹配的专业数据库");
   requireWhenAvailable(2, policy.web, "近期公开动态必须引用豆包搜索的可追溯公开来源");
   if (policy.risk.size) {
     requireWhenAvailable(3, policy.risk, "风险与关注事项必须优先引用企业风险数据库");
-  } else {
-    requireWhenAvailable(3, policy.professional, "风险与关注事项必须包含专业数据集依据");
   }
-  requireWhenAvailable(4, policy.professional, "销售机会判断必须包含专业数据集依据");
-  requireWhenAvailable(5, policy.professional, "建议行动必须包含专业数据集依据");
+  return errors;
+}
+
+function normalizeLegalEntityName(value) {
+  return String(value || "")
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[\s·•()（）\[\]【】_-]+/gu, "");
+}
+
+function escapeRegularExpression(value) {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
+
+function dossierBusinessEntityRecord(citation) {
+  if (citation?.source_kind !== "专业数据集") return null;
+  const summary = String(citation?.summary || "");
+  const name = summary.match(/(?:^|[;；])\s*公司名称\s*[:：]\s*([^;；]+)/u)?.[1]?.trim() || "";
+  const registryFieldCount = [
+    /(?:^|[;；])\s*统一社会信用代码\s*[:：]/u,
+    /(?:^|[;；])\s*注册号\s*[:：]/u,
+    /(?:^|[;；])\s*(?:公司组织类型|企业类型)\s*[:：]/u,
+    /(?:^|[;；])\s*(?:注册地址|住所)\s*[:：]/u,
+    /(?:^|[;；])\s*成立日期\s*[:：]/u,
+    /(?:^|[;；])\s*(?:经营范围|法人姓名|法定代表人)\s*[:：]/u,
+  ].filter((pattern) => pattern.test(summary)).length;
+  // DataPro can return a registry row from a query labelled as finance,
+  // research, sales or risk data. Entity isolation must therefore be based on
+  // the structured fields in the payload instead of trusting the query label.
+  if (!name || registryFieldCount < 1) return null;
+  return name ? { id: String(citation.id || ""), name, summary } : null;
+}
+
+function normalizeDossierCitationSemantics(citations) {
+  const registryKeeperByFingerprint = new Map();
+  const registryFingerprint = (citation, record) => `${normalizeLegalEntityName(record.name)}:${String(
+    citation.summary || "",
+  )
+    .normalize("NFKC")
+    .replace(/\s+/gu, "")
+    .replace(/[；;]/gu, ";")
+    .replace(/[：:]/gu, ":")}`;
+
+  firstJsonArray(citations).forEach((citation) => {
+    const record = dossierBusinessEntityRecord(citation);
+    if (!record) return;
+    const fingerprint = registryFingerprint(citation, record);
+    const current = registryKeeperByFingerprint.get(fingerprint);
+    if (
+      !current
+      || (
+        /企业工商数据库/u.test(String(citation.label || ""))
+        && !/企业工商数据库/u.test(String(current.label || ""))
+      )
+    ) {
+      registryKeeperByFingerprint.set(fingerprint, citation);
+    }
+  });
+
+  return firstJsonArray(citations).flatMap((citation) => {
+    const record = dossierBusinessEntityRecord(citation);
+    if (!record) return [citation];
+    const fingerprint = registryFingerprint(citation, record);
+    if (registryKeeperByFingerprint.get(fingerprint) !== citation) return [];
+    if (/企业工商数据库/u.test(String(citation.label || ""))) return [citation];
+    const recordSuffix = String(citation.label || "").match(/\s*·\s*记录\s*\d+/u)?.[0] || "";
+    return [{
+      ...citation,
+      label: `企业工商数据库${recordSuffix || " · 自动识别记录"}`,
+    }];
+  });
+}
+
+function isExplicitTargetBranchRecord(record, targetName) {
+  const recordKey = normalizeLegalEntityName(record?.name || "");
+  const targetKey = normalizeLegalEntityName(targetName || "");
+  return Boolean(
+    recordKey
+    && targetKey
+    && recordKey !== targetKey
+    && recordKey.startsWith(targetKey)
+    && /分公司$/u.test(String(record?.name || "").trim())
+  );
+}
+
+function businessEntityAnchorErrors(body, citations, company) {
+  const targetName = String(company?.name || company?.legal_name || "").trim();
+  const targetKey = normalizeLegalEntityName(targetName);
+  if (!targetKey) return [];
+  const records = citations.map(dossierBusinessEntityRecord).filter(Boolean);
+  const selectedIds = new Set(firstJsonArray(body[0]?.citation_ids).map(String));
+  const selectedRecords = records.filter((record) => selectedIds.has(record.id));
+  const targetRecords = records.filter((record) => normalizeLegalEntityName(record.name) === targetKey);
+  const selectedTargetRecords = selectedRecords.filter((record) => normalizeLegalEntityName(record.name) === targetKey);
+  if (!targetRecords.length) return [];
+  const errors = [];
+  if (!selectedTargetRecords.length) {
+    errors.push(`企业与业务概览必须引用公司名称完全等于“${targetName}”的工商记录`);
+    return errors;
+  }
+  const branchPattern = new RegExp(
+    `${escapeRegularExpression(targetName)}[\\p{Script=Han}A-Za-z0-9（）()·]{1,24}(?:分公司|子公司)`,
+    "gu",
+  );
+  for (const match of String(body[0]?.text || "").matchAll(branchPattern)) {
+    const referencedName = match[0];
+    if (!selectedRecords.some((record) => (
+      normalizeLegalEntityName(record.name) === normalizeLegalEntityName(referencedName)
+    ))) {
+      errors.push(`企业与业务概览提到“${referencedName}”，但本章没有引用该分支机构自己的工商记录`);
+    }
+  }
+  const sentences = dossierSentenceUnits(body[0]?.text || "");
+  const sameAnchor = (anchor, recordAnchors) => recordAnchors.some((candidate) => (
+    String(candidate).replace(/[,，]/gu, "") === String(anchor).replace(/[,，]/gu, "")
+  ));
+  sentences.forEach((sentence, sentenceIndex) => {
+    const explicitOtherRecords = selectedRecords.filter((record) => (
+      normalizeLegalEntityName(record.name) !== targetKey
+      && sentence.includes(record.name)
+    ));
+    const allowedRecords = explicitOtherRecords.length ? explicitOtherRecords : selectedTargetRecords;
+    const allowedSummaries = allowedRecords.map((record) => record.summary);
+    for (const date of extractGroundingDates(sentence)) {
+      if (!allowedSummaries.some((summary) => extractGroundingDates(summary).includes(date))) {
+        errors.push(`企业与业务概览第 ${sentenceIndex + 1} 条把日期 ${date} 归属给“${explicitOtherRecords[0]?.name || targetName}”，但对应工商记录不支持该归属`);
+      }
+    }
+    for (const number of extractGroundingNumbers(sentence)) {
+      if (!allowedSummaries.some((summary) => sameAnchor(number, extractGroundingNumbers(summary)))) {
+        errors.push(`企业与业务概览第 ${sentenceIndex + 1} 条把数值 ${number} 归属给“${explicitOtherRecords[0]?.name || targetName}”，但对应工商记录不支持该归属`);
+      }
+    }
+    const identifiers = sentence.match(/\b[0-9A-Z]{12,24}\b/gu) || [];
+    for (const identifier of identifiers) {
+      if (!allowedSummaries.some((summary) => summary.includes(identifier))) {
+        errors.push(`企业与业务概览第 ${sentenceIndex + 1} 条把登记标识 ${identifier} 归属给“${explicitOtherRecords[0]?.name || targetName}”，但对应工商记录不支持该归属`);
+      }
+    }
+  });
+  return [...new Set(errors)];
+}
+
+function unrelatedBusinessEntityCitationErrors(body, citations, company) {
+  const targetName = String(company?.name || company?.legal_name || "").trim();
+  const targetKey = normalizeLegalEntityName(targetName);
+  if (!targetKey) return [];
+  const recordById = new Map(
+    citations
+      .map(dossierBusinessEntityRecord)
+      .filter(Boolean)
+      .map((record) => [record.id, record]),
+  );
+  const errors = [];
+  firstJsonArray(body).slice(1).forEach((paragraph, offset) => {
+    const sectionIndex = offset + 1;
+    const paragraphText = String(paragraph?.text || "");
+    const unrelated = firstJsonArray(paragraph?.citation_ids)
+      .map((id) => recordById.get(String(id)))
+      .filter((record) => {
+        if (!record || normalizeLegalEntityName(record.name) === targetKey) return false;
+        return !(
+          isExplicitTargetBranchRecord(record, targetName)
+          && paragraphText.includes(record.name)
+        );
+      });
+    for (const record of unrelated) {
+      errors.push(
+        `${DOSSIER_SECTION_TITLES[sectionIndex]}不得把未明确点名或未经关系核验的其他主体工商记录归属到目标企业：${record.name}`,
+      );
+    }
+  });
+  return [...new Set(errors)];
+}
+
+function staticRegistryInferenceErrors(body, citations) {
+  const citationById = new Map(citations.map((item) => [String(item.id), item]));
+  const registryOnly = (sectionIndex) => {
+    const selected = firstJsonArray(body[sectionIndex]?.citation_ids)
+      .map((id) => citationById.get(String(id)))
+      .filter(Boolean);
+    return Boolean(
+      selected.length
+      && selected.every((citation) => dossierBusinessEntityRecord(citation)),
+    );
+  };
+  const errors = [];
+  const dynamicsText = String(body[1]?.text || "");
+  if (
+    registryOnly(1)
+    && (
+      /业务动作(?:主要)?聚焦/u.test(dynamicsText)
+      || /构成[^。！？]{0,40}(?:独立产品线|业务增长|业务变化)/u.test(dynamicsText)
+      || /具备直接开展[^。！？]{0,40}(?:经营条件|业务条件)/u.test(dynamicsText)
+    )
+  ) {
+    errors.push("经营与业务动态不能把静态工商登记范围提升为当前业务动作、独立产品线或现实经营能力");
+  }
+  const overviewText = String(body[0]?.text || "");
+  if (
+    registryOnly(0)
+    && /(?:同时承担|形成[^。！？]{0,30}业务定位|制造基地[^。！？]{0,20}法定主体|实际从事|主营)/u.test(overviewText)
+  ) {
+    errors.push("企业与业务概览只能把工商信息表述为登记范围，不能提升为实际主营、制造主体或现实业务定位");
+  }
+  const opportunityText = String(body[4]?.text || "");
+  if (
+    registryOnly(4)
+    && /(?:同时承担|已具备|具备直接|已形成|现实业务能力)/u.test(opportunityText)
+  ) {
+    errors.push("销售机会判断可以把登记范围作为对接方向，但不能写成企业已承担该业务或已具备现实能力");
+  }
   return errors;
 }
 
 function dossierSectionSemanticErrors(body, citations, company) {
-  const errors = [];
+  const errors = [
+    ...businessEntityAnchorErrors(body, citations, company),
+    ...unrelatedBusinessEntityCitationErrors(body, citations, company),
+    ...staticRegistryInferenceErrors(body, citations),
+  ];
   const citationById = new Map(citations.map((item) => [String(item.id), item]));
+  const sectionEvidenceText = (index) => firstJsonArray(body[index]?.citation_ids)
+    .map((id) => citationById.get(String(id)))
+    .filter(Boolean)
+    .map((item) => `${item.label || ""} ${item.summary || ""}`)
+    .join(" ");
+  body.slice(0, 4).forEach((paragraph, index) => {
+    const paragraphCitations = firstJsonArray(paragraph?.citation_ids)
+      .map((id) => citationById.get(String(id)))
+      .filter(Boolean);
+    if (
+      paragraphCitations.some((item) => item.entity_match === "alias_scoped")
+      && !paragraphCitations.some((item) => item.entity_match === "verified")
+      && !/(?:品牌|集团|相关业务|在华业务|中国业务|公开信息显示)/u.test(String(paragraph?.text || ""))
+    ) {
+      errors.push(`${DOSSIER_SECTION_TITLES[index]}使用品牌或简称来源时必须明确主体边界`);
+    }
+  });
   const recentCitations = firstJsonArray(body[2]?.citation_ids)
     .map((id) => citationById.get(String(id)))
     .filter((item) => item?.source_kind === "联网搜索");
@@ -358,7 +699,26 @@ function dossierSectionSemanticErrors(body, citations, company) {
   ) {
     errors.push("近期公开动态引用了不具备明确业务事件的网页或低价值营销页面");
   }
+  [0, 1].forEach((sectionIndex) => {
+    const trajectoryText = stripDossierSectionTitle(body[sectionIndex]?.text || "");
+    if (
+      DOSSIER_BUSINESS_TRAJECTORY_INFERENCE.test(trajectoryText)
+      && !DOSSIER_BUSINESS_TRAJECTORY_INFERENCE.test(sectionEvidenceText(sectionIndex))
+    ) {
+      errors.push("企业概览或经营动态不能把静态经营范围或少量项目外推为业务转型或能力扩展");
+    }
+  });
+  const recentText = stripDossierSectionTitle(body[2]?.text || "");
+  if (
+    DOSSIER_RECENT_DEMAND_INFERENCE.test(recentText)
+    && !/(?:采购|配套|交付|项目|资源)[^。！？\n]{0,12}(?:需求|意向)/u.test(sectionEvidenceText(2))
+  ) {
+    errors.push("近期公开动态不能把中标或公告节奏写成来源未披露的采购需求或采购意向");
+  }
   const riskText = stripDossierSectionTitle(body[3]?.text || "");
+  if (DOSSIER_COMPANY_WIDE_INFERENCE.test(riskText)) {
+    errors.push("风险与关注事项不能把个别项目或单条公开信息外推为企业整体结构性结论");
+  }
   if (!DOSSIER_SPECIFIC_RISK_TERMS.test(riskText)) return errors;
   const riskCitations = firstJsonArray(body[3]?.citation_ids)
     .map((id) => citationById.get(String(id)))
@@ -378,13 +738,46 @@ function dossierSectionSemanticErrors(body, citations, company) {
   return errors;
 }
 
+function dossierSectionEvidenceGroundingErrors(body, citations) {
+  const citationById = new Map(citations.map((item) => [String(item?.id || ""), item]));
+  const errors = [];
+  firstJsonArray(body).forEach((paragraph, sectionIndex) => {
+    const title = DOSSIER_SECTION_TITLES[sectionIndex] || `第 ${sectionIndex + 1} 章`;
+    const segments = firstJsonArray(paragraph?.segments).length
+      ? firstJsonArray(paragraph.segments)
+      : [{
+        text: stripDossierSectionTitle(paragraph?.text || ""),
+        citation_ids: firstJsonArray(paragraph?.citation_ids),
+      }];
+    segments.forEach((segment, segmentIndex) => {
+      const evidenceTexts = firstJsonArray(segment?.citation_ids)
+        .map((id) => citationById.get(String(id)))
+        .filter(Boolean)
+        .flatMap((citation) => [citation.summary, citation.excerpt].filter(Boolean));
+      errors.push(...groundedTextErrors({
+        text: segment?.text || "",
+        evidenceTexts,
+        path: `${title}第 ${segmentIndex + 1} 段`,
+        requireEventFamily: false,
+        checkOrganizations: false,
+      }));
+    });
+  });
+  return [...new Set(errors)];
+}
+
 const JOB_STAGE_LABELS = Object.freeze({
   queued: "等待执行",
+  retry_wait: "正在等待自动重试",
   starting: "正在准备",
   collecting_evidence: "正在收集可信资料",
+  collecting_professional: "正在核验专业资料",
+  collecting_public: "正在检索公开资料",
+  building_evidence: "正在整理可信资料",
   retrieving_memory: "正在检索历史资料",
   validating_evidence: "正在校验资料",
   generating_dossier: "正在生成档案",
+  validating_dossier: "正在核验档案",
   storing_memory: "正在保存长期资料",
   persisting_result: "正在保存结果",
   syncing_materials: "正在同步历史资料",
@@ -393,6 +786,58 @@ const JOB_STAGE_LABELS = Object.freeze({
   failed: "执行失败",
   cancelled: "已取消",
 });
+
+function objectValue(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function safeJobProgressDetail(value) {
+  const detail = objectValue(value);
+  const current = Number(detail.current);
+  const total = Number(detail.total);
+  const nextRetryAt = String(detail.next_retry_at || "");
+  return {
+    ...(detail.message ? { message: String(detail.message).replace(/\s+/g, " ").trim().slice(0, 100) } : {}),
+    ...(Number.isInteger(current) && current >= 0 ? { current } : {}),
+    ...(Number.isInteger(total) && total > 0 ? { total } : {}),
+    ...(nextRetryAt && Number.isFinite(new Date(nextRetryAt).getTime())
+      ? { next_retry_at: new Date(nextRetryAt).toISOString() }
+      : {}),
+  };
+}
+
+async function mapWithConcurrency(items, limit, operation) {
+  const values = [...items];
+  const results = new Array(values.length);
+  let cursor = 0;
+  const workers = Array.from(
+    { length: Math.min(Math.max(1, Number(limit) || 1), Math.max(1, values.length)) },
+    async () => {
+      while (cursor < values.length) {
+        const index = cursor;
+        cursor += 1;
+        results[index] = await operation(values[index], index);
+      }
+    },
+  );
+  await Promise.all(workers);
+  return results;
+}
+
+function workflowQueryKey(provider, query) {
+  return `${provider}:${createHash("sha256").update(String(query || "")).digest("hex").slice(0, 24)}`;
+}
+
+function reusableDossierCheckpoint(checkpoint, companyId, ttlMs) {
+  const value = objectValue(checkpoint);
+  if (
+    Number(value.schema_version) !== 1
+    || String(value.company_id || "") !== String(companyId || "")
+  ) return null;
+  const savedAt = new Date(value.updated_at || value.collected_at || "").getTime();
+  if (!Number.isFinite(savedAt) || Date.now() - savedAt > ttlMs) return null;
+  return value;
+}
 
 function emptySalesData() {
   return {
@@ -409,6 +854,29 @@ function emptySalesData() {
 
 function compactText(value, maxLength = 900) {
   return normalizeImportedText(value).replace(/\s+/g, " ").trim().slice(0, maxLength);
+}
+
+function compactCompleteSentences(value, maxLength = 300) {
+  const text = normalizeImportedText(value).replace(/\s+/g, " ").trim();
+  if (!text || text.length <= maxLength) return text;
+  const sentences = text.match(/[^。！？!?]+[。！？!?]/gu) || [];
+  let result = "";
+  for (const sentence of sentences) {
+    const normalized = sentence.trim();
+    const candidate = result ? `${result} ${normalized}` : normalized;
+    if (candidate.length > maxLength) break;
+    result = candidate;
+  }
+  if (result) return result;
+  const bounded = text.slice(0, maxLength);
+  const boundary = Math.max(
+    bounded.lastIndexOf("；"),
+    bounded.lastIndexOf(";"),
+    bounded.lastIndexOf("，"),
+    bounded.lastIndexOf(","),
+  );
+  const completeClause = boundary >= 40 ? bounded.slice(0, boundary) : bounded;
+  return ensureDossierLinePunctuation(completeClause);
 }
 
 function qaConversationHistory(messages, { maxMessages = 10, maxCharacters = 6000 } = {}) {
@@ -591,18 +1059,52 @@ function normalizedCompanyIdentity(value) {
   return String(value || "").normalize("NFKC").toLowerCase().replace(/[\s·_.\-/（）()]/g, "");
 }
 
+function parentheticalBrandAlias(value) {
+  const match = String(value || "").trim().match(/^([^（）()]{2,16})\s*[（(]\s*(?:中国|China)\s*[）)]/iu);
+  return String(match?.[1] || "").trim();
+}
+
+const GENERIC_COMPANY_SEARCH_TERMS = new Set([
+  "公司",
+  "企业",
+  "集团",
+  "车企",
+  "汽车",
+  "新能源",
+  "科技",
+  "制造业",
+  "供应商",
+]);
+
 function companyIdentityAliases(company = {}) {
+  const canonicalName = normalizedCompanyIdentity(company.name);
   const names = [
     company.name,
     ...firstJsonArray(company.aliases),
+    parentheticalBrandAlias(company.name),
   ].map(normalizedCompanyIdentity).filter(Boolean);
-  const derived = names.flatMap((name) => {
+  const safeNames = names.filter((name) => (
+    name.length >= 4
+    || (
+      name.length >= 2
+      && canonicalName.includes(name)
+      && !GENERIC_COMPANY_SEARCH_TERMS.has(name)
+    )
+  ));
+  const derived = safeNames.flatMap((name) => {
     const withoutLegalSuffix = name.replace(/(?:股份有限公司|有限责任公司|有限公司|股份公司|集团公司|集团)$/u, "");
     const withoutIndustrySuffix = withoutLegalSuffix.replace(/(?:新能源科技|汽车工业|汽车科技|信息技术|网络科技)$/u, "");
     return [name, withoutLegalSuffix, withoutIndustrySuffix];
   });
   return [...new Set(derived)]
-    .filter((item) => item.length >= 4)
+    .filter((item) => (
+      item.length >= 4
+      || (
+        item.length >= 2
+        && canonicalName.includes(item)
+        && !GENERIC_COMPANY_SEARCH_TERMS.has(item)
+      )
+    ))
     .sort((left, right) => right.length - left.length);
 }
 
@@ -636,18 +1138,6 @@ function isPublicRiskEvidenceForCompany(source, point, company) {
   );
 }
 
-const GENERIC_COMPANY_SEARCH_TERMS = new Set([
-  "公司",
-  "企业",
-  "集团",
-  "车企",
-  "汽车",
-  "新能源",
-  "科技",
-  "制造业",
-  "供应商",
-]);
-
 function companySearchAlias(query, companyName) {
   const rawQuery = String(query || "").trim().slice(0, 80);
   const normalizedQuery = normalizedCompanyIdentity(rawQuery);
@@ -664,7 +1154,10 @@ function companySearchAlias(query, companyName) {
 }
 
 function preferredCompanySearchName(company) {
-  const aliases = firstJsonArray(company?.aliases)
+  const aliases = [
+    ...firstJsonArray(company?.aliases),
+    parentheticalBrandAlias(company?.name),
+  ]
     .map((value) => companySearchAlias(value, company?.name))
     .filter(Boolean)
     .sort((left, right) => normalizedCompanyIdentity(left).length - normalizedCompanyIdentity(right).length);
@@ -703,6 +1196,14 @@ function publicSourceUrl(value) {
   }
 }
 
+function publicSourceHostname(value) {
+  try {
+    return new URL(publicSourceUrl(value)).hostname.replace(/^www\./i, "").toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
 function publicCitationView(citation, id = citation?.id) {
   const sourceKind = compactText(citation?.source_kind || "资料来源", 40);
   const rawLabel = compactText(normalizeSalesText(citation?.label || ""), 160);
@@ -715,17 +1216,20 @@ function publicCitationView(citation, id = citation?.id) {
     : sanitizedRawLabel || sourceKind;
   const entityMatch = String(citation?.entity_match || "");
   const cleanedPublicSummary = sourceKind === "联网搜索"
-    ? cleanPublicEvidenceText(citation?.summary || citation?.excerpt || "", 600)
+    ? cleanPublicEvidenceText(citation?.summary || citation?.excerpt || "", 2400)
     : "";
   const summary = sourceKind === "联网搜索"
-    ? (isSubstantiveDossierEvidencePoint(cleanedPublicSummary) ? cleanedPublicSummary : label)
-    : businessText(citation?.summary || citation?.excerpt || "", "", 600);
+    ? (cleanedPublicSummary || label)
+    : businessText(citation?.summary || citation?.excerpt || "", "", 2400);
   return {
     id: String(id || ""),
     label,
     source_kind: sourceKind,
     url: publicSourceUrl(citation?.url),
     summary,
+    site_name: sourceKind === "联网搜索"
+      ? compactText(citation?.site_name || "", 160)
+      : "",
     published_at: citation?.published_at || null,
     source_updated_at: citation?.source_updated_at || null,
     source_quality_label: compactText(citation?.source_quality_label || "", 80),
@@ -908,6 +1412,51 @@ function isLowValuePublicDossierSource(source, point = "") {
   return DOSSIER_LOW_VALUE_PUBLIC_SOURCE_PATTERNS.some((pattern) => pattern.test(text));
 }
 
+function isDisplayableDossierCitation(citation, company) {
+  if (!/专业数据集|联网搜索/.test(String(citation?.source_kind || ""))) return false;
+  if (hasDossierEvidenceDebris(citation?.label || "")) return false;
+  if (!businessText(citation?.summary || citation?.excerpt, "", 600)) return false;
+  if (citation.source_kind !== "联网搜索") {
+    const point = safeDeterministicDossierPoint(conciseProfessionalPoint(citation));
+    return Boolean(
+      point
+      && !isLowValueProfessionalPoint(point)
+      && isSubstantiveDossierEvidencePoint(point)
+    );
+  }
+  const point = concisePublicPoint(citation);
+  if (!point || isLowValuePublicDossierSource(citation, point)) return false;
+  if (!isPublicCitationRelevantToCompany(citation, point, company)) return false;
+  const hasSpecificRisk = DOSSIER_SPECIFIC_RISK_TERMS.test(`${citation.label || ""} ${point}`);
+  return !hasSpecificRisk || isPublicRiskEvidenceForCompany(citation, point, company);
+}
+
+function dossierCitationAnchorsLegalEntity(citation, company = {}) {
+  if (citation?.source_kind !== "专业数据集") return false;
+  const sourceText = normalizedCompanyIdentity(`${citation.label || ""} ${citation.summary || citation.excerpt || ""}`);
+  const canonicalName = normalizedCompanyIdentity(company.name);
+  const creditCode = normalizedCompanyIdentity(
+    company.unified_social_credit_code || company.credit_code || "",
+  );
+  return Boolean(
+    (canonicalName && sourceText.includes(canonicalName))
+    || (creditCode && sourceText.includes(creditCode))
+  );
+}
+
+function dossierGroundingErrors(citations = [], body = null, company = {}) {
+  const citedIds = Array.isArray(body)
+    ? new Set(body.flatMap((paragraph) => firstJsonArray(paragraph?.citation_ids).map(String)))
+    : null;
+  const used = citations.filter((citation) => !citedIds || citedIds.has(String(citation.id)));
+  const errors = [];
+  if (!used.length) errors.push("档案没有引用可展示的外部来源");
+  if (!used.some((citation) => dossierCitationAnchorsLegalEntity(citation, company))) {
+    errors.push("档案没有实际引用能够确认目标法定主体的专业来源");
+  }
+  return errors;
+}
+
 function isGenericCompanyLandingPage(source, point, company) {
   const label = normalizedCompanyIdentity(cleanPublicEvidenceLabel(source?.label));
   if (!label) return false;
@@ -940,6 +1489,66 @@ function isRecentPublicDossierCitation(source, point, company) {
     && DOSSIER_ACTION_TERMS.test(text)
     && isPublicCitationRelevantToCompany(source, point, company)
   );
+}
+
+export function assessDossierEvidenceCoverage(company, collected = {}) {
+  const professional = firstJsonArray(collected.professional)
+    .map((source) => ({ ...source, source_kind: "专业数据集" }))
+    .filter((source) => isDisplayableDossierCitation(source, company));
+  const publicSources = firstJsonArray(collected.public_sources)
+    .map((source) => ({ ...source, source_kind: "联网搜索" }))
+    .filter((source) => isDisplayableDossierCitation(source, company));
+  const recentPublic = publicSources.filter((source) => (
+    isRecentPublicDossierCitation(source, concisePublicPoint(source), company)
+  ));
+  const riskSources = [
+    ...professional.filter((source) => (
+      /企业风险数据库/.test(String(source.label || ""))
+      && !dossierBusinessEntityRecord(source)
+    )),
+    ...publicSources.filter((source) => (
+      isPublicRiskEvidenceForCompany(source, concisePublicPoint(source), company)
+    )),
+  ];
+  const operationsSources = [
+    ...professional.filter((source) => (
+      /金融数据库|汽车销量数据库|科研学术数据搜索服务/.test(String(source.label || ""))
+      && !dossierBusinessEntityRecord(source)
+    )),
+    ...recentPublic.filter((source) => (
+      DOSSIER_ACTION_TERMS.test(`${source.label || ""} ${concisePublicPoint(source)}`)
+      && !DOSSIER_SPECIFIC_RISK_TERMS.test(`${source.label || ""} ${concisePublicPoint(source)}`)
+    )),
+  ];
+  const procurementSources = recentPublic.filter((source) => (
+    /招标|采购|中标|供应商|框架协议|项目/.test(`${source.label || ""} ${concisePublicPoint(source)}`)
+  ));
+  const publicHosts = new Set(
+    publicSources.map((source) => publicSourceHostname(source.url)).filter(Boolean),
+  );
+  const coverage = {
+    legal_entity: professional.some((source) => (
+      /企业工商数据库/.test(String(source.label || ""))
+      || dossierTextMentionsCompany(`${source.label || ""} ${source.summary || ""}`, company)
+    )),
+    operations: operationsSources.length > 0,
+    recent_public: recentPublic.length > 0,
+    risk: riskSources.length > 0,
+    procurement_or_project: procurementSources.length > 0,
+    public_host_count: publicHosts.size,
+    usable_professional_count: professional.length,
+    usable_public_count: publicSources.length,
+  };
+  coverage.missing_topics = [
+    ...(!coverage.recent_public ? ["recent_public"] : []),
+    ...(!coverage.operations ? ["operations"] : []),
+    ...(!coverage.risk ? ["risk"] : []),
+    ...(!coverage.procurement_or_project ? ["procurement_or_project"] : []),
+    ...(coverage.public_host_count < Math.min(3, coverage.usable_public_count + 1)
+      ? ["source_diversity"]
+      : []),
+  ];
+  return coverage;
 }
 
 function publicDossierEvidenceScore(source, point, company) {
@@ -1065,7 +1674,20 @@ function dossierDisplayText(dossier) {
 function isDisplayableDossier(dossier) {
   const text = dossierDisplayText(dossier);
   if (!compactText(dossier?.summary || firstJsonArray(dossier?.body)[0]?.text || dossier?.memory_summary, 80)) return false;
-  return !hasTechnicalErrorText(text) && !/这份档案需要重新获取|provider_error|fetch failed|鉴权失败|Unauthorized/.test(text);
+  if (hasTechnicalErrorText(text) || /这份档案需要重新获取|provider_error|fetch failed|鉴权失败|Unauthorized/.test(text)) {
+    return false;
+  }
+  const body = firstJsonArray(dossier?.body);
+  if (body.length !== DOSSIER_SECTION_TITLES.length) return false;
+  const citationIds = new Set(firstJsonArray(dossier?.citations).map((item) => String(item?.id || "")));
+  if (!citationIds.size) return false;
+  if (dossierSectionContentErrors(body).length) return false;
+  if (body.some((paragraph) => (
+    !firstJsonArray(paragraph?.citation_ids).some((id) => citationIds.has(String(id)))
+  ))) {
+    return false;
+  }
+  return true;
 }
 
 function cleanMaterialText(value) {
@@ -1129,7 +1751,7 @@ function qaDisplayCitationIdentity(citation, index = 0) {
   const sourceKind = compactText(citation?.source_kind || "资料来源", 80);
   const label = compactText(citation?.label || "", 240);
   if (sourceKind === "企业档案") {
-    return `dossier:${label.replace(/\s*[·•]\s*(?:企业与业务概览|经营与业务动态|近期公开动态|风险与关注事项|销售机会判断|建议行动|章节\s*\d+)\s*$/u, "")}`;
+    return `dossier-section:${label || index}`;
   }
   const uri = canonicalOpenVikingResourceUri(citation?.uri || "");
   if (uri) return `uri:${uri}`;
@@ -1249,6 +1871,21 @@ export class SalesService {
       "ASYNC_JOBS_ENABLED",
       "true",
     ));
+    this.dossierCheckpointTtlMs = Math.max(
+      5 * 60_000,
+      Math.min(
+        2 * 60 * 60_000,
+        Number(this.env.value("DOSSIER_CHECKPOINT_TTL_MS", "1800000")) || 1_800_000,
+      ),
+    );
+    this.dossierDataProConcurrency = Math.max(
+      1,
+      Math.min(3, Number(this.env.value("DOSSIER_DATAPRO_CONCURRENCY", "2")) || 2),
+    );
+    this.dossierWebConcurrency = Math.max(
+      1,
+      Math.min(4, Number(this.env.value("DOSSIER_WEB_CONCURRENCY", "3")) || 3),
+    );
     this.providerRuns = options.providerRunStore || new ProviderRunStore({
       repository: this.repository,
       failOnPersistenceError: this.runtimePolicy.fail_closed,
@@ -1480,6 +2117,7 @@ export class SalesService {
       status,
       stage,
       stage_label: JOB_STAGE_LABELS[stage] || JOB_STAGE_LABELS[status] || "正在处理",
+      stage_detail: safeJobProgressDetail(job.progress_detail),
       progress: Math.max(0, Math.min(Number(job.progress ?? (status === "succeeded" ? 100 : 0)), 100)),
       entity_type: job.entity_type || "",
       entity_id: job.entity_id || "",
@@ -1508,6 +2146,8 @@ export class SalesService {
       status: "queued",
       stage: "queued",
       progress: 0,
+      checkpoint: {},
+      progress_detail: {},
       entity_type: String(input.entity_type || ""),
       entity_id: String(input.entity_id || ""),
       idempotency_key: input.idempotency_key || null,
@@ -1597,6 +2237,7 @@ export class SalesService {
     const workflowOptions = {
       claimed_job: job,
       report_progress: options.report_progress,
+      save_checkpoint: options.save_checkpoint,
     };
     if (job.job_type === "sales_dossier_generation") {
       return this.createDossier(job.entity_id, job.request || {}, workflowOptions);
@@ -2151,6 +2792,7 @@ export class SalesService {
         existing?.name,
         name,
         searchAlias,
+        parentheticalBrandAlias(name),
       ].filter(Boolean))],
       unified_social_credit_code: unifiedSocialCreditCode || existing?.unified_social_credit_code || "",
       legal_representative: dataProField(item, dataProCompanyFields.legal_representative, 120) || existing?.legal_representative || "",
@@ -2339,25 +2981,44 @@ export class SalesService {
       .map((id) => this.data.dossiers[id])
       .filter(Boolean)
       .filter(isDisplayableDossier)
-      .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
       .map((dossier) => ({
-        id: dossier.id,
-        company_id: dossier.company_id,
-        title: dossier.title,
-        summary: businessText(dossier.summary, "这份档案需要重新获取最新资料后再展示。", 300),
-        version_no: Number(dossier.version_no || 1),
-        previous_dossier_id: dossier.previous_dossier_id || null,
-        change_status: dossier.change_status || "initial",
-        data_as_of: dossier.data_as_of ?? null,
-        generated_at: dossier.generated_at || dossier.created_at,
-        created_at: dossier.created_at,
+        dossier,
+        publicView: this.publicDossier(dossier),
+      }))
+      .filter(({ publicView }) => (
+        !this.runtimePolicy.fail_closed
+        || !this.publicDossierQualityErrors(publicView, company).length
+      ))
+      .sort((a, b) => String(b.dossier.created_at).localeCompare(String(a.dossier.created_at)))
+      .map(({ dossier, publicView }) => ({
+        id: publicView.id,
+        company_id: publicView.company_id,
+        title: publicView.title,
+        summary: publicView.summary,
+        version_no: Number(publicView.version_no || 1),
+        previous_dossier_id: publicView.previous_dossier_id || null,
+        change_status: publicView.change_status || "initial",
+        data_as_of: publicView.data_as_of ?? null,
+        generated_at: publicView.generated_at || dossier.created_at,
+        created_at: publicView.created_at,
       }));
   }
 
   dossierDetail(dossierId) {
     const dossier = this.data.dossiers[dossierId];
     if (!dossier) throw new HttpError(404, "dossier_not_found", "档案不存在。", { dossier_id: dossierId });
-    return this.publicDossier(dossier);
+    const publicView = this.publicDossier(dossier);
+    const company = this.data.companies[dossier.company_id] || {
+      name: String(dossier.title || "").replace(/\s*(?:最近档案|销售情报报告).*/, ""),
+      aliases: [],
+    };
+    if (
+      this.runtimePolicy.fail_closed
+      && this.publicDossierQualityErrors(publicView, company).length
+    ) {
+      throw new HttpError(404, "dossier_not_found", "档案不存在。", { dossier_id: dossierId });
+    }
+    return publicView;
   }
 
   publicDossier(dossier) {
@@ -2372,28 +3033,13 @@ export class SalesService {
       80,
     );
     const company = storedCompany || { name: companyName, aliases: [] };
-    const keptCitations = firstJsonArray(dossier.citations)
-      .filter((citation) => /专业数据|专业数据库|工商|招投标|联网搜索|公开|新闻|公告|媒体|官网/.test(`${citation.source_kind || ""} ${citation.label || ""}`))
-      .filter((citation) => !hasDossierEvidenceDebris(citation.label || ""))
-      .filter((citation) => businessText(citation.summary || citation.excerpt, "", 600))
-      .filter((citation) => (
-        citation.source_kind !== "联网搜索"
-        || !isLowValuePublicDossierSource(citation, concisePublicPoint(citation))
-      ))
-      .filter((citation) => (
-        citation.source_kind !== "联网搜索"
-        || isPublicCitationRelevantToCompany(
-          citation,
-          concisePublicPoint(citation),
-          company,
-        )
-      ))
-      .filter((citation) => {
-        if (citation.source_kind !== "联网搜索") return true;
-        const point = concisePublicPoint(citation);
-        const hasSpecificRisk = DOSSIER_SPECIFIC_RISK_TERMS.test(`${citation.label || ""} ${point}`);
-        return !hasSpecificRisk || isPublicRiskEvidenceForCompany(citation, point, company);
-      })
+    const storedCitations = firstJsonArray(dossier.citations);
+    const storedCitationIds = new Set(storedCitations.map((citation) => String(citation.id)));
+    const evidencePackCitationCandidates = evidencePackCitations({
+      items: firstJsonArray(dossier.evidence_pack),
+    }).filter((citation) => !storedCitationIds.has(String(citation.id)));
+    const keptCitations = [...storedCitations, ...evidencePackCitationCandidates]
+      .filter((citation) => isDisplayableDossierCitation(citation, company))
       .sort((a, b) => citationRank(a) - citationRank(b));
     const citationIdMap = new Map();
     const keptCitationIds = new Set(keptCitations.map((citation) => String(citation.id)));
@@ -2411,11 +3057,27 @@ export class SalesService {
       citationIdMap.set(String(citation.id), id);
       return publicCitationView(citation, id);
     });
+    const validationCitations = keptCitations.map((citation, index) => ({
+      ...citation,
+      id: String(index + 1),
+    }));
     const body = firstJsonArray(dossier.body).map((paragraph) => ({
-      text: normalizeSalesText(businessText(paragraph.text, summary, 500)),
+      text: normalizeSalesText(compactCompleteSentences(
+        businessText(paragraph.text, summary, 1400),
+        1400,
+      )),
       citation_ids: firstJsonArray(paragraph.citation_ids)
         .map((id) => citationIdMap.get(String(id)))
         .filter(Boolean),
+      segments: firstJsonArray(paragraph.segments).map((segment) => ({
+        text: normalizeSalesText(compactCompleteSentences(
+          businessText(segment.text, "", 1400),
+          1200,
+        )),
+        citation_ids: firstJsonArray(segment.citation_ids)
+          .map((id) => citationIdMap.get(String(id)))
+          .filter(Boolean),
+      })).filter((segment) => segment.text),
     }));
     const publicView = {
       id: dossier.id,
@@ -2432,16 +3094,13 @@ export class SalesService {
       created_at: dossier.created_at || null,
       updated_at: dossier.updated_at || dossier.created_at || null,
     };
-    if (bodySectionsWithRemovedCitation.size) {
-      const rebuiltBody = this.reportDossierBody(company, citations, body);
-      const repairedBody = body.map((paragraph, index) => (
-        bodySectionsWithRemovedCitation.has(index)
-          ? rebuiltBody[index] || paragraph
-          : paragraph
-      ));
-      publicView.body = this.fixedPublicDossierBody(publicView, repairedBody, company);
-    } else {
-      publicView.body = this.fixedPublicDossierBody(publicView, body, company);
+    publicView.body = bodySectionsWithRemovedCitation.size
+      ? []
+      : this.fixedPublicDossierBody(publicView, body, company, validationCitations);
+    if (!publicView.body.length) {
+      publicView.summary = "";
+      publicView.citations = [];
+      return publicView;
     }
     const usedCitationIds = new Set(
       publicView.body.flatMap((paragraph) => firstJsonArray(paragraph.citation_ids).map(String)),
@@ -2454,15 +3113,59 @@ export class SalesService {
       ...citation,
       id: String(index + 1),
     }));
+    Object.defineProperty(publicView, "_validation_citations", {
+      configurable: false,
+      enumerable: false,
+      writable: false,
+      value: usedCitations.map((citation, index) => ({
+        ...citation,
+        id: String(index + 1),
+      })),
+    });
     publicView.body = publicView.body.map((paragraph) => ({
       ...paragraph,
       citation_ids: [...new Set(
         firstJsonArray(paragraph.citation_ids)
           .map((id) => finalCitationIdMap.get(String(id)))
-          .filter(Boolean),
+        .filter(Boolean),
       )],
+      segments: firstJsonArray(paragraph.segments).map((segment) => ({
+        ...segment,
+        citation_ids: [...new Set(
+          firstJsonArray(segment.citation_ids)
+            .map((id) => finalCitationIdMap.get(String(id)))
+            .filter(Boolean),
+        )],
+      })).filter((segment) => segment.text && segment.citation_ids.length),
     }));
+    publicView.data_as_of = deriveEvidenceDataAsOf(
+      publicView.citations,
+      publicView.generated_at || new Date().toISOString(),
+    );
+    const groundedSummary = [
+      publicView.body.find((item) => item.text.startsWith("近期公开动态："))?.text.replace(/^近期公开动态：/, ""),
+      publicView.body.find((item) => item.text.startsWith("销售机会判断："))?.text.replace(/^销售机会判断：/, ""),
+    ].filter(Boolean).join(" ");
+    publicView.summary = compactCompleteSentences(
+      isSubstantiveDossierSummary(groundedSummary) ? groundedSummary : publicView.summary,
+      300,
+    );
     return publicView;
+  }
+
+  publicDossierQualityErrors(publicView, company) {
+    const validationCitations = publicView?._validation_citations || publicView?.citations || [];
+    const validated = validateDossierModelAnswer(publicView, validationCitations);
+    return [
+      ...validated.errors,
+      ...(this.runtimePolicy.fail_closed
+        ? dossierGroundingErrors(validationCitations, validated.body, company)
+        : []),
+      ...dossierSectionSourceErrors(validated.body, validationCitations, company),
+      ...dossierSectionContentErrors(validated.body),
+      ...dossierSectionSemanticErrors(validated.body, validationCitations, company),
+      ...dossierSectionEvidenceGroundingErrors(validated.body, validationCitations),
+    ];
   }
 
   async createDossier(companyId, body = {}, options = {}) {
@@ -2470,6 +3173,9 @@ export class SalesService {
     const reportProgress = typeof options.report_progress === "function"
       ? options.report_progress
       : async () => {};
+    const saveCheckpoint = typeof options.save_checkpoint === "function"
+      ? options.save_checkpoint
+      : async () => null;
     const job = options.claimed_job
       ? await this.activateClaimedJob(options.claimed_job, "sales_dossier_generation")
       : await this.startJob({
@@ -2480,40 +3186,94 @@ export class SalesService {
         request: body,
         retry_job_id: options.retry_job_id || "",
       });
+    let dossierCheckpoint = reusableDossierCheckpoint(
+      job.checkpoint?.dossier,
+      company.id,
+      this.dossierCheckpointTtlMs,
+    ) || {
+      schema_version: 1,
+      company_id: company.id,
+      created_at: nowIso(),
+    };
+    const persistDossierCheckpoint = async (patch = {}, progressOptions = {}) => {
+      dossierCheckpoint = {
+        ...dossierCheckpoint,
+        ...clone(patch),
+        schema_version: 1,
+        company_id: company.id,
+        updated_at: nowIso(),
+      };
+      await saveCheckpoint(
+        { dossier: dossierCheckpoint },
+        progressOptions,
+      );
+      return dossierCheckpoint;
+    };
     let run = null;
 
     try {
-      await reportProgress("collecting_evidence", 8);
       run = await this.providerRuns.startRun({
         operation: "sales_dossier_generation",
         entity_type: "target_enterprise",
         entity_id: company.id,
         job_id: job.id,
       });
-      const collected = await this.collectDossierEvidence(company, run.id);
-      await this.assertJobActive(job.id);
-      await reportProgress("validating_evidence", 34);
       const generatedAt = nowIso();
-      const packed = await this.trackProviderStep(run.id, {
-        provider: "rule",
-        operation: "build_evidence_pack",
-        input_summary: `校验 ${company.name} 的专业数据集与豆包搜索来源，并计算稳定证据哈希`,
-      }, async () => {
-        const evidencePack = buildDossierEvidencePack({
-          company,
-          collected,
-          memoryContexts: [],
-          generatedAt,
-        });
-        return {
-          ok: true,
+      let evidencePack = objectValue(dossierCheckpoint.evidence_pack);
+      if (Array.isArray(evidencePack.items) && evidencePack.evidence_hash) {
+        await reportProgress("building_evidence", 50);
+        await this.skipProviderStep(run.id, {
           provider: "rule",
-          provider_mode: "local",
-          evidence_pack: evidencePack,
-          summary: `证据包保留 ${evidencePack.items.length} 条，拒绝 ${evidencePack.rejected.length} 条归属不明来源。`,
-        };
-      });
-      const evidencePack = packed.evidence_pack;
+          operation: "resume_evidence_checkpoint",
+          input_summary: `恢复 ${company.name} 当前任务中已经完成的资料采集`,
+          output_summary: `已从任务检查点恢复 ${evidencePack.items.length} 条资料，未重复调用上游服务。`,
+        });
+        evidencePack = clone(evidencePack);
+      } else {
+        const collected = await this.collectDossierEvidence(company, run.id, {
+          checkpoint: dossierCheckpoint.evidence_collection,
+          report_progress: reportProgress,
+          save_checkpoint: async (collection, progressOptions = {}) => persistDossierCheckpoint(
+            { evidence_collection: collection },
+            progressOptions,
+          ),
+        });
+        await this.assertJobActive(job.id);
+        await reportProgress("building_evidence", 50);
+        const packed = await this.trackProviderStep(run.id, {
+          provider: "rule",
+          operation: "build_evidence_pack",
+          input_summary: `校验 ${company.name} 的专业数据集与豆包搜索来源，并计算稳定证据哈希`,
+        }, async () => {
+          const builtEvidencePack = buildDossierEvidencePack({
+            company,
+            collected,
+            memoryContexts: [],
+            generatedAt,
+          });
+          return {
+            ok: true,
+            provider: "rule",
+            provider_mode: "local",
+            evidence_pack: builtEvidencePack,
+            summary: `证据包保留 ${builtEvidencePack.items.length} 条，拒绝 ${builtEvidencePack.rejected.length} 条不满足主体或内容质量门禁的来源。`,
+          };
+        });
+        evidencePack = packed.evidence_pack;
+        await persistDossierCheckpoint(
+          {
+            collected_at: evidencePack.collected_at,
+            evidence_pack: evidencePack,
+          },
+          {
+            stage: "validating_evidence",
+            progress: 56,
+            detail: { message: "正在校验资料与企业主体" },
+          },
+        );
+      }
+      await this.assertJobActive(job.id);
+      await reportProgress("validating_evidence", 56);
       if (this.runtimePolicy.fail_closed) {
         const evidenceValidation = validateProductionEvidencePack(evidencePack);
         if (!evidenceValidation.ok) {
@@ -2524,13 +3284,66 @@ export class SalesService {
         }
       }
       await this.assertJobActive(job.id);
-      const latestDossier = (company.dossier_ids || [])
+      const storedDossiers = (company.dossier_ids || [])
         .map((id) => this.data.dossiers[id])
         .filter(Boolean)
         .sort((a, b) => Number(b.version_no || 1) - Number(a.version_no || 1)
-          || String(b.created_at || "").localeCompare(String(a.created_at || "")))[0] || null;
+          || String(b.created_at || "").localeCompare(String(a.created_at || "")));
+      const latestDossier = storedDossiers
+        .filter(isDisplayableDossier)
+        .find((item) => (
+          !this.runtimePolicy.fail_closed
+          || !this.publicDossierQualityErrors(this.publicDossier(item), company).length
+        )) || null;
+      const nextVersionNo = Math.max(
+        0,
+        ...storedDossiers.map((item) => Number(item.version_no || 0)).filter(Number.isFinite),
+      ) + 1;
 
-      if (latestDossier?.evidence_hash && latestDossier.evidence_hash === evidencePack.evidence_hash) {
+      const currentCitationInputs = this.buildCitationInputs(evidencePack, []);
+      const currentSourcePolicy = dossierSectionSourcePolicy(currentCitationInputs, company);
+      const currentTargetName = String(company.name || company.legal_name || "").trim();
+      const currentTargetEntityKey = normalizeLegalEntityName(currentTargetName);
+      const currentAgentContext = buildDossierAgentContext({
+        citations: currentCitationInputs,
+        evidencePolicy: evidencePack.policy || null,
+        evidenceConflicts: evidencePack.conflicts || [],
+        sourceSelectionPolicy: {
+          business_database_ids: [...currentSourcePolicy.business],
+          business_dynamics_ids: [...currentSourcePolicy.businessDynamics],
+          risk_database_ids: [...currentSourcePolicy.risk],
+          market_database_ids: [...currentSourcePolicy.market],
+          professional_dataset_ids: [...currentSourcePolicy.professional],
+          web_search_ids: [...currentSourcePolicy.web],
+          excluded_entity_citation_ids: currentCitationInputs
+            .map((citation) => ({ citation, record: dossierBusinessEntityRecord(citation) }))
+            .filter(({ record }) => (
+              record
+              && normalizeLegalEntityName(record.name) !== currentTargetEntityKey
+            ))
+            .map(({ citation }) => String(citation.id)),
+        },
+      });
+      const latestDossierValidation = latestDossier
+        ? validateDossierModelAnswer(latestDossier, currentCitationInputs)
+        : { body: [], errors: ["没有可复用的历史档案"] };
+      const latestDossierQualityErrors = latestDossier
+        ? [
+          ...latestDossierValidation.errors,
+          ...dossierSectionSourceErrors(latestDossierValidation.body, currentCitationInputs, company),
+          ...dossierSourceUsageErrors(
+            latestDossierValidation.body.flatMap((paragraph) => paragraph.citation_ids || []),
+            currentAgentContext.citations,
+            currentAgentContext.sourceUsageRequirements,
+            "现有档案",
+          ),
+        ]
+        : latestDossierValidation.errors;
+      if (
+        latestDossier?.evidence_hash
+        && latestDossier.evidence_hash === evidencePack.evidence_hash
+        && latestDossierQualityErrors.length === 0
+      ) {
         await this.skipProviderStep(run.id, {
           provider: "model",
           operation: "generate_sales_dossier",
@@ -2555,11 +3368,18 @@ export class SalesService {
         };
       }
 
-      await reportProgress("generating_dossier", 64);
+      await reportProgress("generating_dossier", 68);
       const modelDossier = await this.generateDossierWithModel(company, evidencePack, [], run.id);
       await this.assertJobActive(job.id);
+      await reportProgress("validating_dossier", 86);
       let dossier = modelDossier;
       if (!dossier) {
+        if (this.runtimePolicy.fail_closed) {
+          throw providerUnavailable("model", "The model did not return a publishable dossier.", {
+            reason: "dossier_quality_gate_failed",
+            validation_errors: ["模型结果未通过正文、引用或展示质量门禁，未保存规则兜底档案。"],
+          });
+        }
         const ruleResult = await this.trackProviderStep(run.id, {
           provider: "rule",
           operation: "build_dossier_fallback",
@@ -2575,14 +3395,63 @@ export class SalesService {
       }
 
       dossier.provider_run_id = run.id;
-      dossier.version_no = Number(latestDossier?.version_no || 0) + 1;
+      dossier.version_no = nextVersionNo;
       dossier.previous_dossier_id = latestDossier?.id || null;
       dossier.evidence_hash = evidencePack.evidence_hash;
       dossier.change_status = latestDossier ? "changed" : "initial";
       dossier.data_as_of = evidencePack.data_as_of;
       dossier.generated_at = generatedAt;
       dossier.evidence_pack = evidencePack.items;
+      const usedCitationIds = new Set(
+        firstJsonArray(dossier.body)
+          .flatMap((paragraph) => firstJsonArray(paragraph?.citation_ids).map(String)),
+      );
+      dossier.citations = firstJsonArray(dossier.citations)
+        .filter((citation) => usedCitationIds.has(String(citation?.id || "")));
+      dossier.data_as_of = deriveEvidenceDataAsOf(dossier.citations, generatedAt);
+      const dossierGroundingValidationErrors = dossierGroundingErrors(
+        dossier.citations,
+        dossier.body,
+        company,
+      );
+      if (this.runtimePolicy.fail_closed && dossierGroundingValidationErrors.length) {
+        throw providerUnavailable("model", "The dossier did not cite a verified legal-entity anchor.", {
+          reason: "public_dossier_quality_gate_failed",
+          validation_errors: dossierGroundingValidationErrors,
+        });
+      }
+      const finalPublicView = this.publicDossier(dossier);
+      const finalPublicViewErrors = this.publicDossierQualityErrors(finalPublicView, company);
+      if (this.runtimePolicy.fail_closed && finalPublicViewErrors.length) {
+        throw providerUnavailable("model", "The dossier failed the final pre-persistence public-view quality gate.", {
+          reason: "public_dossier_quality_gate_failed",
+          validation_errors: finalPublicViewErrors,
+        });
+      }
       dossier.dossier_fingerprint = makeDossierFingerprint(dossier);
+      if (
+        latestDossier
+        && makeDossierFingerprint(latestDossier) === dossier.dossier_fingerprint
+      ) {
+        await this.providerRuns.completeRun(run.id, {
+          result_ref: `dossier:${latestDossier.id}:same_report`,
+        });
+        await reportProgress("persisting_result", 95);
+        await this.completeJob(job.id, {
+          result_ref: `dossier:${latestDossier.id}:same_report`,
+          result: { action: "no_report_change", dossier_id: latestDossier.id },
+        });
+        return {
+          action: "no_report_change",
+          checked_at: generatedAt,
+          record: this.listDossiers(companyId).find((item) => item.id === latestDossier.id),
+          detail: this.dossierDetail(latestDossier.id),
+          progress: this.progressView(company),
+          memory_record: null,
+          provider_run_id: run.id,
+          job_id: job.id,
+        };
+      }
 
       const nextCompany = {
         ...company,
@@ -2656,17 +3525,41 @@ export class SalesService {
           if (this.runtimePolicy.fail_closed) throw persistenceError;
         }
       }
-      await this.failJob(job.id, error);
+      if (!options.claimed_job) await this.failJob(job.id, error);
       throw error;
     }
   }
 
-  async collectDossierEvidence(company, providerRunId = "") {
-    const professional = [];
-    const publicSources = [];
-    const issues = [];
+  async collectDossierEvidence(company, providerRunId = "", options = {}) {
+    const checkpoint = objectValue(options.checkpoint);
+    const professional = firstJsonArray(checkpoint.professional).map(clone);
+    const publicSources = firstJsonArray(checkpoint.public_sources).map(clone);
+    const issues = firstJsonArray(checkpoint.issues).map((item) => String(item)).filter(Boolean);
+    const completedQueryKeys = new Set(
+      firstJsonArray(checkpoint.completed_query_keys).map(String).filter(Boolean),
+    );
     const professionalFailures = [];
     const publicFailures = [];
+    const reportProgress = typeof options.report_progress === "function"
+      ? options.report_progress
+      : async () => {};
+    const saveCheckpoint = typeof options.save_checkpoint === "function"
+      ? options.save_checkpoint
+      : async () => {};
+    let checkpointWrite = Promise.resolve();
+    const persistCollection = (progressOptions = {}) => {
+      const snapshot = {
+        schema_version: 1,
+        company_id: company.id,
+        professional: clone(professional),
+        public_sources: clone(publicSources),
+        issues: [...new Set(issues)].slice(-40),
+        completed_query_keys: [...completedQueryKeys].sort(),
+        updated_at: nowIso(),
+      };
+      checkpointWrite = checkpointWrite.then(() => saveCheckpoint(snapshot, progressOptions));
+      return checkpointWrite;
+    };
 
     if (this.dataProProvider?.isRunEnabled?.()) {
       const maxProfessionalSources = Math.max(1, Math.min(Number(this.dataProProvider.maxSources || 3), 5));
@@ -2685,7 +3578,13 @@ export class SalesService {
         },
       ].slice(0, maxProfessionalSources);
 
-      for (const item of dataProQueries) {
+      const dataProQueryKeys = dataProQueries.map((item) => workflowQueryKey("datapro", item.query));
+      const dataProCompletedCount = () => dataProQueryKeys
+        .filter((key) => completedQueryKeys.has(key)).length;
+      await reportProgress("collecting_professional", 10);
+      await mapWithConcurrency(dataProQueries, this.dossierDataProConcurrency, async (item) => {
+        const queryKey = workflowQueryKey("datapro", item.query);
+        if (completedQueryKeys.has(queryKey)) return;
         try {
           const result = await this.trackProviderStep(providerRunId, {
             provider: "datapro",
@@ -2706,17 +3605,30 @@ export class SalesService {
                 purpose: item.purpose || "",
               });
             });
+            completedQueryKeys.add(queryKey);
           } else if (!result.ok) {
             professionalFailures.push(result.error || {});
             issues.push(`专业数据集暂时不可用：${result.error?.message || result.error?.code || "provider_error"}`);
           } else {
             issues.push(`${item.label}调用成功，但没有返回可展示的业务字段。`);
+            completedQueryKeys.add(queryKey);
           }
         } catch (error) {
           professionalFailures.push(error);
           issues.push(`专业数据集暂时不可用：${error.message}`);
         }
-      }
+        const current = dataProCompletedCount();
+        await persistCollection({
+          stage: "collecting_professional",
+          progress: Math.round(10 + (current / Math.max(1, dataProQueries.length)) * 18),
+          detail: {
+            current,
+            total: dataProQueries.length,
+            message: `正在核验专业资料 ${current}/${dataProQueries.length}`,
+          },
+        });
+      });
+      await checkpointWrite;
     } else {
       await this.skipProviderStep(providerRunId, {
         provider: "datapro",
@@ -2728,7 +3640,13 @@ export class SalesService {
     }
 
     if (this.webSearchProvider?.isRunEnabled?.()) {
-      const seenPublicSources = new Set();
+      const seenPublicSources = new Set(
+        publicSources.map((source) => source.url || source.label).filter(Boolean),
+      );
+      const authoritativeHosts = new Map();
+      const publicQueryKeys = new Set(
+        [...completedQueryKeys].filter((key) => key.startsWith("web_search:")),
+      );
       const searchName = preferredCompanySearchName(company);
       const currentYear = new Date().getFullYear();
       const webQueries = [...new Map([
@@ -2753,10 +3671,37 @@ export class SalesService {
           query: `${searchName} ${currentYear} 产能 供应链 业务动态`,
         },
       ].map((item) => [item.query, item])).values()];
-      const maxPublicSources = 15;
+      const maxPublicSources = 18;
+      const rememberAuthoritativeHost = (candidate) => {
+        const host = publicSourceHostname(candidate.url);
+        const authorityLevel = Number(candidate.auth_level);
+        if (
+          !host
+          || !Number.isFinite(authorityLevel)
+          || authorityLevel < 2
+          || !dossierTextMentionsCompany(
+            `${candidate.site_name} ${candidate.label} ${candidate.summary}`,
+            company,
+          )
+        ) return;
+        const score = authorityLevel * 10
+          + (dossierTextMentionsCompany(candidate.site_name, company) ? 12 : 0)
+          + (/\.cn$/i.test(host) ? 4 : 0)
+          + (/\/(?:news|press|stories|company)\b/i.test(candidate.url) ? 3 : 0);
+        authoritativeHosts.set(host, Math.max(score, authoritativeHosts.get(host) || 0));
+      };
+      publicSources.forEach(rememberAuthoritativeHost);
+      const registerPublicQueries = (queries) => {
+        queries.forEach((queryItem) => {
+          publicQueryKeys.add(workflowQueryKey("web_search", queryItem.query));
+        });
+      };
+      const publicCompletedCount = () => [...publicQueryKeys]
+        .filter((key) => completedQueryKeys.has(key)).length;
 
-      for (const queryItem of webQueries) {
-        if (publicSources.length >= maxPublicSources) break;
+      const runPublicQuery = async (queryItem) => {
+        const queryKey = workflowQueryKey("web_search", queryItem.query);
+        if (completedQueryKeys.has(queryKey)) return;
         try {
           const result = await this.trackProviderStep(providerRunId, {
             provider: "web_search",
@@ -2768,11 +3713,12 @@ export class SalesService {
             count: 3,
             need_summary: true,
             query_rewrite: true,
+            auth_level: 1,
           }));
           if (!result.ok) {
             publicFailures.push(result.error || {});
             issues.push(`联网搜索暂时不可用：${result.error?.code || "provider_error"}`);
-            continue;
+            return;
           }
           for (const searchResult of result.results || []) {
             const key = searchResult.url || searchResult.title;
@@ -2790,15 +3736,108 @@ export class SalesService {
               query: queryItem.query,
               purpose: queryItem.purpose,
             };
+            rememberAuthoritativeHost(candidate);
             if (isLowValuePublicDossierSource(candidate, concisePublicPoint(candidate))) continue;
+            if (!isDisplayableDossierCitation({ ...candidate, source_kind: "联网搜索" }, company)) {
+              continue;
+            }
             seenPublicSources.add(key);
             publicSources.push(candidate);
             if (publicSources.length >= maxPublicSources) break;
           }
+          completedQueryKeys.add(queryKey);
         } catch (error) {
           publicFailures.push(error);
           issues.push(`联网搜索暂时不可用：${error.message}`);
         }
+        const current = publicCompletedCount();
+        const total = Math.max(1, publicQueryKeys.size);
+        await persistCollection({
+          stage: "collecting_public",
+          progress: Math.round(30 + (current / total) * 18),
+          detail: {
+            current,
+            total,
+            message: `正在检索公开资料 ${current}/${total}`,
+          },
+        });
+      };
+      const runPublicBatch = async (queries) => {
+        const unique = [...new Map(queries.map((item) => [item.query, item])).values()];
+        registerPublicQueries(unique);
+        await mapWithConcurrency(unique, this.dossierWebConcurrency, runPublicQuery);
+        await checkpointWrite;
+      };
+
+      await reportProgress("collecting_public", 30);
+      await runPublicBatch(webQueries);
+
+      const hasRecentPublicEvidence = () => publicSources.some((source) => {
+        const citation = { ...source, source_kind: "联网搜索" };
+        const point = concisePublicPoint(citation);
+        return isDisplayableDossierCitation(citation, company)
+          && isRecentPublicDossierCitation(citation, point, company);
+      });
+      if (!hasRecentPublicEvidence() && authoritativeHosts.size) {
+        const officialHosts = [...authoritativeHosts.entries()]
+          .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+          .slice(0, 2)
+          .map(([host]) => host);
+        const officialFollowups = officialHosts.flatMap((host) => [
+          {
+            purpose: `权威站点 ${host} 的新闻、公告与合作`,
+            query: `site:${host} ${searchName} ${currentYear} 新闻 公告 合作 项目`,
+          },
+          {
+            purpose: `权威站点 ${host} 的投资、产能与供应链变化`,
+            query: `site:${host} ${searchName} 投资 产能 供应链 业务`,
+          },
+        ]).slice(0, 3);
+        if (publicSources.length < maxPublicSources && !hasRecentPublicEvidence()) {
+          await runPublicBatch(officialFollowups.slice(0, 2));
+        }
+      }
+
+      const coverage = assessDossierEvidenceCoverage(company, {
+        professional,
+        public_sources: publicSources,
+      });
+      const coverageFollowups = [];
+      const addCoverageFollowup = (topic, purpose, query) => {
+        if (coverage.missing_topics.includes(topic)) {
+          coverageFollowups.push({ purpose, query });
+        }
+      };
+      addCoverageFollowup(
+        "recent_public",
+        "近期官方公告、项目与合作事件",
+        `${company.name} ${currentYear} 官方公告 项目 合作 投资`,
+      );
+      addCoverageFollowup(
+        "operations",
+        "经营、产品、产能与供应链变化",
+        `${searchName} ${currentYear} 产品 产能 交付 供应链 业务`,
+      );
+      addCoverageFollowup(
+        "risk",
+        "监管、司法、召回与经营风险",
+        `${company.name} ${currentYear} 监管 处罚 诉讼 召回 经营异常`,
+      );
+      addCoverageFollowup(
+        "procurement_or_project",
+        "招采、中标与项目落地信号",
+        `${company.name} ${currentYear} 招标 采购 中标 项目 供应商`,
+      );
+      addCoverageFollowup(
+        "source_diversity",
+        "不同权威公开渠道的企业动态",
+        `${searchName} ${currentYear} 政府 公告 行业协会 项目 新闻`,
+      );
+      const boundedCoverageFollowups = [...new Map(
+        coverageFollowups.map((item) => [item.query, item]),
+      ).values()].slice(0, 4);
+      if (publicSources.length < maxPublicSources && boundedCoverageFollowups.length) {
+        await runPublicBatch(boundedCoverageFollowups);
       }
     } else {
       await this.skipProviderStep(providerRunId, {
@@ -2816,14 +3855,28 @@ export class SalesService {
         ...providerFailureDetails(professionalFailures),
       });
     }
-    if (this.runtimePolicy.fail_closed && !publicSources.length) {
+    if (this.runtimePolicy.fail_closed && !publicSources.length && publicFailures.length) {
       throw providerUnavailable("web_search", "No verified public evidence was returned for the dossier.", {
         issues,
         ...providerFailureDetails(publicFailures),
       });
     }
 
-    return { professional, public_sources: publicSources, issues };
+    await persistCollection({
+      stage: "building_evidence",
+      progress: 48,
+      detail: { message: "正在整理可信资料" },
+    });
+    await checkpointWrite;
+    return {
+      professional: professional.slice(0, 30),
+      public_sources: publicSources.slice(0, 18),
+      issues,
+      coverage: assessDossierEvidenceCoverage(company, {
+        professional,
+        public_sources: publicSources,
+      }),
+    };
   }
 
   async searchOpenViking(company, query) {
@@ -2966,7 +4019,24 @@ export class SalesService {
   }
 
   async generateDossierWithModel(company, collected, memoryContexts, providerRunId = "") {
-    const citationInputs = this.buildCitationInputs(collected, memoryContexts);
+    const evidencePack = Array.isArray(collected?.items) && collected?.evidence_hash
+      ? collected
+      : buildDossierEvidencePack({
+        company,
+        collected,
+        memoryContexts: [],
+        generatedAt: nowIso(),
+      });
+    const evidenceCompilation = compileDossierEvidenceAtoms({
+      evidencePack: evidencePack.entity
+        ? evidencePack
+        : {
+          ...evidencePack,
+          entity: resolveCompanyEntity(company),
+        },
+    });
+    const citationInputs = this.buildCitationInputs(evidencePack, memoryContexts)
+      .filter((citation) => isDisplayableDossierCitation(citation, company));
     if (!citationInputs.length) {
       await this.skipProviderStep(providerRunId, {
         provider: "model",
@@ -2990,266 +4060,183 @@ export class SalesService {
       }
       return null;
     }
-    const sourcePolicy = dossierSectionSourcePolicy(citationInputs);
-    const externalCitation = citationInputs[0];
-    const citationsById = new Map(citationInputs.map((item) => [String(item.id), item]));
-    const firstEffectiveCitation = (ids, fallback) => (
-      [...ids].map((id) => citationsById.get(String(id))).find(Boolean) || fallback
-    );
-    const professionalCitation = firstEffectiveCitation(sourcePolicy.professional, externalCitation);
-    const businessCitation = firstEffectiveCitation(sourcePolicy.business, professionalCitation);
-    const riskCitation = firstEffectiveCitation(sourcePolicy.risk, professionalCitation);
-    const marketCitation = firstEffectiveCitation(sourcePolicy.market, businessCitation);
-    const publicCitation = firstEffectiveCitation(sourcePolicy.web, externalCitation);
+    const evidenceGroundingErrors = dossierGroundingErrors(citationInputs, null, company);
+    if (evidenceGroundingErrors.length) {
+      if (this.runtimePolicy.fail_closed) {
+        throw new HttpError(422, "evidence_quality_insufficient", "可展示来源不足以生成正式销售档案。", {
+          validation_errors: evidenceGroundingErrors,
+        });
+      }
+    }
+    const sourcePolicy = dossierSectionSourcePolicy(citationInputs, company);
+    const targetName = String(company.name || company.legal_name || "").trim();
     const sourceSelectionPolicy = {
       business_database_ids: [...sourcePolicy.business],
+      business_dynamics_ids: [...sourcePolicy.businessDynamics],
       risk_database_ids: [...sourcePolicy.risk],
       market_database_ids: [...sourcePolicy.market],
       professional_dataset_ids: [...sourcePolicy.professional],
       web_search_ids: [...sourcePolicy.web],
+      excluded_entity_citation_ids: citationInputs
+        .map((citation) => ({ citation, record: dossierBusinessEntityRecord(citation) }))
+        .filter(({ record }) => (
+          record
+          && normalizeLegalEntityName(record.name)
+            !== normalizeLegalEntityName(targetName)
+        ))
+        .map(({ citation }) => String(citation.id)),
     };
-    const outputSchema = {
-      title: `${company.name} 销售情报报告`,
-      summary: "用 2-3 句概括企业最近情况、最值得关注的变化和销售判断",
-      body: [
-        { text: "企业与业务概览：用 2-4 句说明主体、核心业务与当前经营定位", citation_ids: [businessCitation.id] },
-        { text: "经营与业务动态：用 2-4 句提炼专业数据中与当前销售判断相关的经营、市场或技术变化", citation_ids: [marketCitation.id] },
-        { text: "近期公开动态：用 2-4 句概括豆包搜索中有日期、可追溯的近期公开事项", citation_ids: [publicCitation.id] },
-        { text: "风险与关注事项：用 2-4 句呈现有证据支持的法律合规、经营、供应链、交付或市场风险，并说明其对销售推进的实际影响", citation_ids: [riskCitation.id, publicCitation.id] },
-        { text: "销售机会判断：用 2-4 句基于外部事实给出可解释的场景、时机和优先级判断", citation_ids: [marketCitation.id, publicCitation.id] },
-        { text: "建议行动：列出 3-5 个下一步核验或沟通动作，每项都应能由当前外部事实解释", citation_ids: [riskCitation.id, publicCitation.id] },
-      ],
-      memory_summary: "适合写入长期记忆的报告摘要",
-    };
+    const agentContext = buildDossierAgentContext({
+      citations: citationInputs,
+      evidencePolicy: evidencePack.policy || null,
+      evidenceConflicts: evidencePack.conflicts || [],
+      sourceSelectionPolicy,
+      evidenceAtoms: evidenceCompilation.atoms,
+      evidenceCoverage: evidenceCompilation.coverage,
+    });
     const modelInstructions = [
-      "你是销售情报平台的企业报告生成器。只输出 JSON，不要输出 Markdown。",
-      "只能基于输入 citations 生成，不要补编任何事实。",
+      "你是销售情报平台中负责企业档案生成的受约束 Agent。",
+      "只能基于每章 allowed_evidence 中的 Evidence Atom 生成，不要补编任何事实。",
       "本报告只能使用专业数据集和豆包搜索（联网搜索）两类外部来源；不得使用飞书资料、OpenViking 记忆或历史问答。",
       "专业数据集可能来自企业工商、企业风险、金融、汽车或科研学术等不同数据库；必须按章节选用语义匹配的来源，不得把所有专业数据都当作工商信息。",
       "专业数据集能够覆盖的主体、风险、财务、销量或科研事实，必须优先使用对应专业数据库；豆包搜索只补充近期公告、新闻、项目合作及专业库未覆盖的时效信息。",
-      "如果 source_selection_policy.risk_database_ids 非空，风险与关注事项必须引用其中至少一个 id；联网搜索只能用于交叉核验或补充公开动态。",
-      "如果 source_selection_policy.business_database_ids 非空，企业与业务概览必须引用其中至少一个 id。",
-      "如果 source_selection_policy.market_database_ids 非空，经营与业务动态必须引用其中至少一个与正文语义匹配的 id。",
+      "风险与关注事项应优先使用本章 allowed_evidence 中的专业或官方 Atom；公开网页只用于交叉核验或补充公开动态。",
+      "风险章节只能写来源直接披露的风险事实，或把明确事实改写为需要核验的具体事项；不得从单个项目、单笔金额或少量公告外推企业整体的订单结构、客户结构、收入结构、业务能力、回款状况或长期趋势。",
+      ...((sourcePolicy.risk || new Set()).size ? [] : [
+        "当前没有通过主体和内容门禁的专业风险数据库来源。风险与关注事项章不得写具体诉讼、处罚、失信、营收、利润、融资或估值结论；只能把 allowed_evidence 中已核验的主体或经营事实改写为具体的对接前核验事项，不得声称对方已存在该风险。",
+      ]),
+      "企业与业务概览应优先使用能够锚定法定主体的专业 Atom。",
+      "经营与业务动态应优先使用本章 allowed_evidence 中语义匹配的专业经营、市场或科研 Atom。",
       "输出必须是固定六章节报告，且严格按顺序使用标题：企业与业务概览、经营与业务动态、近期公开动态、风险与关注事项、销售机会判断、建议行动。",
-      "这是一份供销售人员使用的完整企业情报报告，不是接口执行摘要。每章必须包含有信息量的业务表述，不得只写“已返回数据”“可用于核验”“建议继续关注”等空泛模板句。",
+      "这是一份供销售人员使用的完整企业情报报告，不是接口执行摘要。每章固定生成一个完整段落，段落可以包含 1-3 个紧密相关的完整句子，并且必须包含有信息量的业务表述，不得只写“已返回数据”“可用于核验”“建议继续关注”等空泛模板句。",
       "正文只呈现企业事实、事件、影响、销售判断和行动，不得向用户解释检索过程、证据校验过程或数据源之间的差异。",
       "禁止在正文中出现“本次未检索到”“本次没有返回”“资料不足”“资料缺口”“来源冲突”“来源不一致”“来源存在差异”“关键字段存在来源差异”“冲突字段”“来源等级不足”等内部诊断话术。",
       "不得照抄搜索结果中的站点导航、作者日期前缀、注册引导、广告文字或被截断的摘要；每个事实句必须语义完整，括号和引号必须闭合，财务、产能和市占率数字必须带完整单位与上下文。",
-      "某一章节的专业数据不足时，必须从 citations 中选择与该章节语义匹配的豆包搜索事实补充；仍无可靠事实时删除无法支持的断言，不能用检索状态或空泛模板凑成章节。",
-      "citations[].entity_match=alias_scoped 表示来源只匹配品牌或简称。可以作为品牌、集团或相关业务动态写入，但必须明确主体边界，不得把它表述成输入法定主体已经发生的确定事实。",
-      "企业与业务概览用于交代主体、主营方向、业务定位和可能的采购场景，不要罗列内部字段名。",
+      "某一章节的专业数据不足时，只能从该章 allowed_evidence 中选择语义匹配的公开事实补充；仍无可靠事实时不得编造或用检索状态、空泛模板凑成章节。",
+      "Evidence Atom 的 entity_match=alias_scoped 表示来源只匹配品牌或简称。可以作为品牌、集团或相关业务动态写入，但必须明确主体边界，不得把它表述成输入法定主体已经发生的确定事实。",
+      "企业与业务概览用于交代主体、主营方向、业务定位和来源能够直接支持的业务应用场景，不要罗列内部字段名，也不得在本章写采购场景、采购需求、采购计划或采购意向。",
+      "静态的登记经营范围只能写成“经营范围包括”或“登记业务覆盖”，不得写成“延伸至”“扩展至”“布局扩展”等时序变化，也不得写成“主营”“同时承担”“形成业务定位”“已具备现实能力”或“制造基地法定主体”。",
+      "销售机会判断可以把登记范围作为待确认的对接方向，但必须明确不代表现实业务、采购意向或预算。建议行动不得根据注册地址虚构已存在的厂区采购窗口或技术部门，应先确认负责相关业务的联系人。",
+      "企业工商数据包含总公司、分公司或子公司记录时，成立日期、注册地址、注册号、统一社会信用代码和法定代表人必须绑定到公司名称完全一致的那条记录；不得把分支机构字段写成目标法定主体字段。只有正文逐字点名分支机构完整名称时，才允许引用该分支机构记录并描述其自身字段。",
+      "正文提到任何分公司或子公司时，本章必须选择该分支机构自己的工商 Evidence Atom；如果本章没有该记录，就删除分支机构名称和相关断言，不得根据总公司记录补写分支布局、区域覆盖或市场承载能力。",
       "经营与业务动态只能写可由来源证明的经营变化、项目、合作、产能、供应链或业务动作；不得复制注册信息或描述检索结果来凑字数。",
+      "若来源只是少量中标、成交或公告记录，只能逐项陈述这些项目，不得据此写企业整体已从某类业务扩展、转向或升级到另一类业务，也不得声称整体能力、市场或产品结构已经改变。",
       "近期公开动态应优先写清日期、事件、合作方或项目，以及该事件为何值得销售关注；不得只复述搜索标题。",
+      "近期公开动态只陈述来源披露的事件与直接影响；不得把中标密度、公告节奏或框架入围写成对方采购需求、采购意向、预算或资源需求正在形成或活跃。此类内容只能在销售机会判断中作为明确标注的保守推断。",
       "同一个事实、事件或数字只能出现在一个最匹配的章节。经营与业务动态写业务变化，近期公开动态写有日期的公开事件，风险与关注事项写风险影响；不得在不同章节复制或轻微改写同一段来源内容。",
       "销售机会判断必须从已经引用的业务动作推导具体切入场景和时机，同时明确这只是机会判断，不能写成对方已有采购意向。",
-      "建议行动必须具体到拟联系的部门或角色、需要核验的问题、可准备的材料和下一步动作，按“1. ...\\n2. ...\\n3. ...”列出 3-5 项，避免通用销售套话。",
+      "建议行动必须具体到拟联系的部门或角色、需要核验的问题、可准备的材料和下一步动作，列出 1-2 项，信息量由证据决定，避免通用销售套话。",
       "每个自然段和每条编号行动都必须使用完整句子，并以句号、问号或感叹号结束；不得以逗号、冒号或分号收尾。",
       "不得展示企业内部主键、关联主键、trace id、request id、record id、接口名、Provider 名或原始响应字段。",
       "建议行动要具体到需要核验的对象、事项或销售动作；不得用内部客户沟通内容补齐外部事实。",
-      "正文每段都必须给出 citation_ids，引用 id 必须逐字复制自输入 citations[].id。",
-      "不得把引用 id 缩写成 1、2 等序号，也不得生成输入中不存在的引用 id。",
+      "模型每章只提交 text 和 evidence_ids；quote、citation_id、URL、segment、citation_ids 与最终引用全部由服务端根据 Evidence Atom 确定性派生。",
+      "只引用与正文事实直接相关的来源，不得为了增加引用数量而加入弱相关或重复来源；来源数量本身不是生成目标。",
+      "source_usage_requirements 只描述当前可用来源，不设置整份报告引用数量门槛。证据充足时优先选择与各事实直接相关的独立来源；证据确实较少时应缩短报告，不得补编或凑引用。",
       "专业数据没有 URL 时也可以作为引用来源，但不能伪造链接。",
       "source_quality_label 表示来源等级，freshness_label 表示时效；过期资料和日期未知的公开来源不得表述为最新事实。",
       "注册资本、营收、净利润、融资、估值及明确的司法/处罚/失信事实属于高风险事实，至少引用两个独立外部来源，且至少一个必须是专业或官方来源。",
       "关键数字只有在两个独立来源返回同一数值时才可写成确定事实；若 evidence_conflicts 标记冲突，必须静默省略该数字，改写为其他有一致证据支持的实质事实，不得列出多个口径，也不得向前端解释冲突。",
     ];
-    const callDossierModel = ({
-      operation,
-      task,
-      maxTokens = 2800,
-      jsonRetry = false,
-      jsonRepairContent = "",
-      invalidAnswer = null,
-      validationErrors = [],
-    }) => (
-      this.modelProvider.callJson({
-        operation,
-        maxTokens,
-        system: [
-          ...modelInstructions,
-          ...(jsonRetry
-            ? [
-              "上一轮响应因 JSON 未完整闭合而无法解析。本轮必须返回完整 JSON。",
-              "缩短各章节表述，完整闭合所有字符串、数组和对象；不得输出 JSON 之外的任何文字。",
-            ]
-            : []),
-          ...(jsonRepairContent
-            ? [
-              "你正在修复上一轮模型生成的无效 JSON。只修复 JSON 语法、闭合和转义问题，不得新增、删除或改写事实。",
-              "必须完整保留六个固定章节及其原有 citation_ids；引用仍须来自 allowed_citation_ids。",
-              "只输出修复后的完整 JSON，不得解释修复过程。",
-            ]
-            : []),
-          ...(invalidAnswer
-            ? [
-              "你正在修复一份未通过证据校验的档案。只修复结构、表述和引用，不得增加任何输入证据之外的事实。",
-              "若校验提示高风险事实来源不足，应删除或弱化该断言，不得为了通过校验随意增加引用。",
-              "修复后的 JSON 必须完整返回六章节正文，不能只返回发生变化的字段。",
-            ]
-            : []),
-        ].join("\n"),
-        payload: {
-          task,
-          company: {
-            name: company.name,
-            industry: company.industry,
-            location: company.location,
-          },
-          allowed_citation_ids: citationInputs.map((item) => item.id),
-          citations: citationInputs,
-          evidence_policy: collected.policy || null,
-          evidence_conflicts: collected.conflicts || [],
-          source_selection_policy: sourceSelectionPolicy,
-          output_schema: outputSchema,
-          ...(jsonRepairContent ? {
-            invalid_json_content: jsonRepairContent,
-          } : {}),
-          ...(invalidAnswer ? {
-            invalid_answer: invalidAnswer,
-            validation_errors: validationErrors,
-          } : {}),
-        },
-      })
-    );
-    try {
-      let result = await this.trackProviderStep(providerRunId, {
-        provider: "model",
-        operation: "generate_sales_dossier",
-        input_summary: `基于 ${citationInputs.length} 条已核验证据生成 ${company.name} 最近档案`,
-        output_summary: "模型已返回结构化档案结果。",
-      }, () => callDossierModel({
-        operation: "sales_dossier",
-        task: "生成企业最近档案",
-      }));
-      if (!result.ok && result.error?.code === "invalid_json") {
-        const invalidContent = String(result.invalid_content || "").trim();
-        if (invalidContent) {
-          result = await this.trackProviderStep(providerRunId, {
-            provider: "model",
-            operation: "repair_sales_dossier_json",
-            input_summary: `修复 ${company.name} 首次档案响应的 JSON 语法`,
-            output_summary: "模型已修复并返回完整结构化档案结果。",
-          }, () => callDossierModel({
-            operation: "sales_dossier_json_repair",
-            task: "修复企业最近档案的 JSON 语法",
-            maxTokens: 3600,
-            jsonRepairContent: invalidContent,
-          }));
+    const validateGeneratedDossier = (answer) => {
+      const normalizedAnswer = {
+        ...(answer || {}),
+        body: firstJsonArray(answer?.body).map((item, index) => {
+          const title = DOSSIER_SECTION_TITLES[index];
+          return {
+            ...item,
+            text: title
+              ? cleanDossierBodyText(item?.text, title, "", 1400)
+              : String(item?.text || ""),
+          };
+        }),
+      };
+      const validatedAnswer = validateDossierModelAnswer(normalizedAnswer, citationInputs);
+      return {
+        ...validatedAnswer,
+        errors: [
+          ...validatedAnswer.errors,
+          ...dossierSectionSourceErrors(validatedAnswer.body, citationInputs, company),
+          ...dossierSectionContentErrors(validatedAnswer.body),
+          ...dossierSectionSemanticErrors(validatedAnswer.body, citationInputs, company),
+          ...dossierSectionEvidenceGroundingErrors(validatedAnswer.body, citationInputs),
+          ...dossierSourceUsageErrors(
+            validatedAnswer.body.flatMap((paragraph) => paragraph.citation_ids || []),
+            agentContext.citations,
+            agentContext.sourceUsageRequirements,
+          ),
+          ...(String(answer?.summary || "").length > 160 ? ["档案摘要超过 160 个字符"] : []),
+          ...(String(answer?.memory_summary || "").length > 200 ? ["记忆摘要超过 200 个字符"] : []),
+        ],
+      };
+    };
+    const agent = new DossierAgent({
+      maxCalls: Number(this.env.value("DOSSIER_AGENT_MAX_CALLS", "3")) || 3,
+      validate: validateGeneratedDossier,
+      callModel: async (request) => {
+        if (typeof this.modelProvider.callRequiredFunction !== "function") {
+          throw new Error("The model provider does not implement strict Function Calling.");
         }
-      }
-      if (!result.ok && result.error?.code === "invalid_json") {
-        result = await this.trackProviderStep(providerRunId, {
+        return this.trackProviderStep(providerRunId, {
           provider: "model",
-          operation: "retry_sales_dossier",
-          input_summary: `首次档案 JSON 未完整闭合，使用更高输出预算重试 ${company.name} 最近档案`,
-          output_summary: "模型重试后已返回完整结构化档案结果。",
-        }, () => callDossierModel({
-          operation: "sales_dossier_retry",
-          task: "重新生成因 JSON 未完整闭合而失败的企业最近档案",
-          maxTokens: 3600,
-          jsonRetry: true,
-        }));
-      }
-      if (!result.ok) {
+          operation: request.operation,
+          input_summary: request.operation === "sales_dossier_agent_plan"
+            ? `基于 ${citationInputs.length} 条已核验证据规划 ${company.name} 的六章节报告`
+            : `根据质量门禁反馈修订 ${company.name} 的六章节报告规划`,
+          output_summary: request.operation === "sales_dossier_agent_plan"
+            ? "档案 Agent 已提交六章节事实、判断、行动与逐项引用规划。"
+            : "档案 Agent 已提交修订后的六章节规划。",
+        }, () => this.modelProvider.callRequiredFunction(request));
+      },
+    });
+    try {
+      const agentResult = await agent.run({
+        company: {
+          name: company.name,
+          industry: company.industry,
+          location: company.location,
+        },
+        citations: citationInputs,
+        evidenceAtoms: evidenceCompilation.atoms,
+        evidenceCoverage: evidenceCompilation.coverage,
+        evidencePolicy: evidencePack.policy || null,
+        evidenceConflicts: evidencePack.conflicts || [],
+        sourceSelectionPolicy,
+        instructions: modelInstructions,
+      });
+      if (!agentResult.ok) {
         if (this.runtimePolicy.fail_closed) {
-          throw providerUnavailable("model", "The model did not return a valid dossier result.", {
-            reason: result.error?.code || "provider_error",
+          throw providerUnavailable("model", "The dossier Agent did not produce a valid result.", {
+            reason: agentResult.result?.error?.code || "dossier_quality_gate_failed",
+            validation_errors: agentResult.validation_errors,
           });
         }
         return null;
       }
-      const validateGeneratedDossier = (answer) => {
-        const normalizedAnswer = {
-          ...(answer || {}),
-          body: firstJsonArray(answer?.body).map((item, index) => {
-            const title = DOSSIER_SECTION_TITLES[index];
-            return {
-              ...item,
-              text: title
-                ? cleanDossierBodyText(item?.text, title, "", 1400)
-                : String(item?.text || ""),
-            };
-          }),
-        };
-        const validatedAnswer = validateDossierModelAnswer(normalizedAnswer, citationInputs);
-        return {
-          ...validatedAnswer,
-          errors: [
-            ...validatedAnswer.errors,
-            ...dossierSectionSourceErrors(validatedAnswer.body, citationInputs),
-            ...dossierSectionContentErrors(validatedAnswer.body),
-          ],
-        };
-      };
-      let validated = validateGeneratedDossier(result.parsed);
-      if (validated.errors.length) {
-        const firstValidationErrors = validated.errors;
-        const repaired = await this.trackProviderStep(providerRunId, {
-          provider: "model",
-          operation: "repair_sales_dossier",
-          input_summary: `根据 ${firstValidationErrors.length} 条证据校验错误修复 ${company.name} 最近档案`,
-          output_summary: "模型已返回修复后的结构化档案结果。",
-        }, () => callDossierModel({
-          operation: "sales_dossier_repair",
-          task: "修复未通过证据校验的企业最近档案",
-          invalidAnswer: result.parsed,
-          validationErrors: firstValidationErrors,
-        }));
-        if (repaired.ok) {
-          const repairedValidation = validateGeneratedDossier(repaired.parsed);
-          result = repaired;
-          validated = repairedValidation;
-        } else {
-          validated = {
-            body: [],
-            errors: [
-              ...firstValidationErrors,
-              `修复调用失败：${repaired.error?.code || "provider_error"}`,
-            ],
-          };
-        }
-        if (validated.errors.length) {
-          const reconstructedBody = this.reportDossierBody(company, citationInputs);
-          const reconstructed = {
-            title: `${company.name} 销售情报报告`,
-            summary: stripDossierSectionTitle(
-              reconstructedBody.find((item) => item.text.startsWith("近期公开动态："))?.text
-              || reconstructedBody[0]?.text
-              || "",
-            ),
-            body: reconstructedBody,
-            memory_summary: reconstructedBody.map((item) => item.text).join("\n"),
-          };
-          const reconstructedValidation = validateGeneratedDossier(reconstructed);
-          if (!reconstructedValidation.errors.length) {
-            return this.normalizeModelDossier(
-              company,
-              { ...reconstructed, body: reconstructedValidation.body },
-              citationInputs,
-              result.raw_ref,
-            );
-          }
-          validated = {
-            body: [],
-            errors: [
-              ...validated.errors,
-              ...reconstructedValidation.errors.map((error) => `安全重建失败：${error}`),
-            ],
-          };
+      const normalizedDossier = this.normalizeModelDossier(
+        company,
+        agentResult.submission,
+        citationInputs,
+        agentResult.result?.raw_ref,
+      );
+      if (!normalizedDossier && this.runtimePolicy.fail_closed) {
+        throw providerUnavailable("model", "The dossier Agent result failed final display validation.", {
+          reason: "dossier_quality_gate_failed",
+          validation_errors: ["档案在最终结构化与展示清洗后不再满足六章节、有效引用和正文质量要求。"],
+        });
+      }
+      if (normalizedDossier) {
+        const publicView = this.publicDossier(normalizedDossier);
+        const publicViewErrors = this.publicDossierQualityErrors(publicView, company);
+        if (publicViewErrors.length) {
           if (this.runtimePolicy.fail_closed) {
-            throw providerUnavailable("model", "The model returned a dossier that failed evidence validation.", {
-              validation_errors: validated.errors,
+            throw providerUnavailable("model", "The dossier Agent result failed the final public-view quality gate.", {
+              reason: "public_dossier_quality_gate_failed",
+              validation_errors: publicViewErrors,
             });
           }
         }
-        if (validated.errors.length) return null;
       }
-      return this.normalizeModelDossier(
-        company,
-        { ...result.parsed, body: validated.body },
-        citationInputs,
-        result.raw_ref,
-      );
+      return normalizedDossier;
     } catch (error) {
       if (this.runtimePolicy.fail_closed) {
         if (error instanceof HttpError) throw error;
@@ -3263,9 +4250,9 @@ export class SalesService {
 
   buildCitationInputs(collected, memoryContexts) {
     if (Array.isArray(collected?.items) && collected?.evidence_hash) {
-      return evidencePackCitations(collected)
+      return normalizeDossierCitationSemantics(evidencePackCitations(collected)
         .filter((citation) => /专业数据集|联网搜索/.test(citation.source_kind))
-        .filter((citation) => cleanEvidenceSummary(citation.summary));
+        .filter((citation) => cleanEvidenceSummary(citation.summary)));
     }
     const citations = [];
     for (const source of collected.professional || []) {
@@ -3299,38 +4286,86 @@ export class SalesService {
         purpose: source.purpose || "",
       });
     }
-    return citations.filter((citation) => /专业数据集|联网搜索/.test(citation.source_kind) && cleanEvidenceSummary(citation.summary));
+    return normalizeDossierCitationSemantics(citations.filter((citation) => (
+      /专业数据集|联网搜索/.test(citation.source_kind)
+      && cleanEvidenceSummary(citation.summary)
+    )));
   }
 
   normalizeModelDossier(company, parsed, citationInputs, rawRef) {
     const allowed = new Map(citationInputs.map((item) => [String(item.id), item]));
     const body = firstJsonArray(parsed?.body)
       .slice(0, DOSSIER_SECTION_TITLES.length)
-      .map((item, index) => ({
-        text: cleanDossierBodyText(item.text, DOSSIER_SECTION_TITLES[index], "", 1400),
-        citation_ids: firstJsonArray(item.citation_ids).map(String).filter((id) => allowed.has(id)),
-      }))
-      .map((item) => ({
-        ...item,
-        citation_ids: item.citation_ids.filter((id) => /专业数据集|联网搜索/.test(allowed.get(id)?.source_kind || "")),
-      }))
-      .filter((item) => (
-        item.text
-        && item.citation_ids.length
-        && !hasBadDisplayText(item.text)
-        && !hasDossierInternalMetaText(item.text)
-      ));
-    if (!body.length) return null;
-    const structuredBody = this.reportDossierBody(company, citationInputs, body);
-    if (dossierSectionContentErrors(structuredBody).length) return null;
-    const structuredSummary = structuredBody.find((item) => item.text.startsWith("近期公开动态："))?.text.replace(/^近期公开动态：/, "")
-      || structuredBody[0].text.replace(/^企业与业务概览：/, "");
+      .map((item, index) => {
+        const title = DOSSIER_SECTION_TITLES[index];
+        const segments = firstJsonArray(item.segments)
+          .map((segment) => ({
+            text: ensureDossierLinePunctuation(
+              normalizeImportedText(normalizeSalesText(segment.text))
+                .replace(/\s+/g, " ")
+                .trim(),
+            ),
+            citation_ids: firstJsonArray(segment.citation_ids)
+              .map(String)
+              .filter((id) => (
+                allowed.has(id)
+                && /专业数据集|联网搜索/.test(allowed.get(id)?.source_kind || "")
+              )),
+          }))
+          .filter((segment) => (
+            segment.text
+            && segment.citation_ids.length
+            && !hasBadDisplayText(segment.text)
+            && !hasDossierInternalMetaText(segment.text)
+          ));
+        const text = cleanDossierBodyText(
+          segments.length
+            ? `${title}：${segments.map((segment) => segment.text).join("\n\n")}`
+            : item.text,
+          title,
+          "",
+          1400,
+        );
+        return {
+          text,
+          citation_ids: [...new Set(segments.length
+            ? segments.flatMap((segment) => segment.citation_ids)
+            : firstJsonArray(item.citation_ids).map(String).filter((id) => allowed.has(id)))],
+          segments,
+        };
+      });
+    if (body.length !== DOSSIER_SECTION_TITLES.length) return null;
+    if (body.some((item) => (
+      !item.text
+      || !item.citation_ids.length
+      || !item.segments.length
+      || hasBadDisplayText(item.text)
+      || hasDossierInternalMetaText(item.text)
+    ))) return null;
+    const validatedBody = validateDossierModelAnswer({ body }, citationInputs);
+    const structuredBody = validatedBody.body;
+    const finalErrors = [
+      ...validatedBody.errors,
+      ...dossierSectionSourceErrors(structuredBody, citationInputs, company),
+      ...dossierSectionContentErrors(structuredBody),
+      ...dossierSectionSemanticErrors(structuredBody, citationInputs, company),
+      ...dossierSectionEvidenceGroundingErrors(structuredBody, citationInputs),
+    ];
+    if (finalErrors.length) return null;
+    const structuredSummary = [
+      structuredBody.find((item) => item.text.startsWith("近期公开动态："))?.text.replace(/^近期公开动态：/, ""),
+      structuredBody.find((item) => item.text.startsWith("销售机会判断："))?.text.replace(/^销售机会判断：/, ""),
+    ].filter(Boolean).join(" ");
+    const parsedSummary = cleanEvidenceSummary(parsed.summary, "", 300);
     const now = nowIso();
     return {
       id: makeId("dossier"),
       company_id: company.id,
       title: `${company.name} 销售情报报告`,
-      summary: cleanEvidenceSummary(parsed.summary, structuredSummary, 180),
+      summary: compactCompleteSentences(
+        isSubstantiveDossierSummary(structuredSummary) ? structuredSummary : parsedSummary,
+        300,
+      ),
       created_at: now,
       body: structuredBody,
       citations: citationInputs,
@@ -3369,7 +4404,7 @@ export class SalesService {
       id: makeId("dossier"),
       company_id: company.id,
       title: `${company.name} 销售情报报告`,
-      summary: compactText(body.find((item) => item.text.startsWith("近期公开动态："))?.text.replace(/^近期公开动态：/, "") || body[0].text.replace(/^企业与业务概览：/, ""), 300),
+      summary: compactCompleteSentences(body.find((item) => item.text.startsWith("近期公开动态："))?.text.replace(/^近期公开动态：/, "") || body[0].text.replace(/^企业与业务概览：/, ""), 300),
       created_at: now,
       body,
       citations,
@@ -3396,8 +4431,10 @@ export class SalesService {
     const completePreferred = DOSSIER_SECTION_TITLES.every((title, index) => (
       preferred[index]?.text.startsWith(`${title}：`)
     ))
-      && dossierSectionSourceErrors(preferred, externalCitations).length === 0
-      && dossierSectionContentErrors(preferred).length === 0;
+      && dossierSectionSourceErrors(preferred, externalCitations, company).length === 0
+      && dossierSectionContentErrors(preferred).length === 0
+      && dossierSectionSemanticErrors(preferred, externalCitations, company).length === 0
+      && dossierSectionEvidenceGroundingErrors(preferred, externalCitations).length === 0;
     if (completePreferred) return preferred.slice(0, DOSSIER_SECTION_TITLES.length);
 
     const professional = externalCitations.filter((item) => item.source_kind === "专业数据集");
@@ -3413,6 +4450,7 @@ export class SalesService {
         === identity
       )) === index;
     });
+    const targetEntityKey = normalizeLegalEntityName(company.name || company.legal_name || "");
     const professionalEvidence = uniqueEvidence(professional
       .map((source) => ({
         source,
@@ -3422,14 +4460,23 @@ export class SalesService {
         item.point
         && !isLowValueProfessionalPoint(item.point)
         && isSubstantiveDossierEvidencePoint(item.point)
+        && (() => {
+          const record = dossierBusinessEntityRecord(item.source);
+          return !record || normalizeLegalEntityName(record.name) === targetEntityKey;
+        })()
       )));
-    const companyEvidence = professionalEvidence.filter((item) => (
-      /企业工商数据库/.test(String(item.source.label || ""))
-      || /公司名称|统一社会信用代码|法定代表人|注册地址/.test(item.point)
-    ));
+    const reportSourcePolicy = dossierSectionSourcePolicy(externalCitations, company);
+    const companyEvidence = professionalEvidence.filter((item) => {
+      const record = dossierBusinessEntityRecord(item.source);
+      return Boolean(record && normalizeLegalEntityName(record.name) === targetEntityKey);
+    });
     const marketEvidence = professionalEvidence.filter((item) => (
-      /金融数据库|汽车销量数据库|科研学术数据搜索服务/.test(String(item.source.label || ""))
-      || /经营|市场|技术|产能|销量|科研|专利/.test(`${item.source.purpose || ""} ${item.source.query || ""}`)
+      !dossierBusinessEntityRecord(item.source)
+      && (
+        reportSourcePolicy.market.has(String(item.source.id))
+        || /金融数据库|汽车销量数据库|科研学术数据搜索服务/.test(String(item.source.label || ""))
+        || /经营|市场|技术|产能|销量|科研|专利/.test(`${item.source.purpose || ""} ${item.source.query || ""}`)
+      )
     ));
     const selectedCompanyEvidence = (companyEvidence.length ? companyEvidence : professionalEvidence).slice(0, 2);
     const selectedMarketEvidence = marketEvidence
@@ -3457,6 +4504,7 @@ export class SalesService {
     const professionalRiskEvidence = professionalEvidence
       .filter((item) => (
         item.point
+        && !dossierBusinessEntityRecord(item.source)
         && (
           DOSSIER_RISK_TERMS.test(`${item.source.label || ""} ${item.source.purpose || ""} ${item.source.query || ""}`)
           || DOSSIER_RISK_TERMS.test(item.point)
@@ -3665,88 +4713,48 @@ export class SalesService {
     }));
   }
 
-  fixedPublicDossierBody(dossier, body, company = {}) {
-    const citations = firstJsonArray(dossier.citations);
-    const normalizedBody = body.map((item, index) => {
+  fixedPublicDossierBody(dossier, body, company = {}, validationCitations = null) {
+    const citations = Array.isArray(validationCitations)
+      ? validationCitations
+      : firstJsonArray(dossier.citations);
+    if (body.length !== DOSSIER_SECTION_TITLES.length) return [];
+    const normalizedBody = body.slice(0, DOSSIER_SECTION_TITLES.length).map((item, index) => {
       const title = DOSSIER_SECTION_TITLES[index];
-      if (!title || !new RegExp(`^${title}[：:]`).test(String(item?.text || ""))) {
-        return item;
-      }
+      const sourceSegments = firstJsonArray(item.segments);
+      const segments = (sourceSegments.length
+        ? sourceSegments
+        : [{
+          text: stripDossierSectionTitle(item.text),
+          citation_ids: firstJsonArray(item.citation_ids),
+        }])
+        .map((segment) => ({
+          text: ensureDossierLinePunctuation(
+            normalizeImportedText(normalizeSalesText(segment.text))
+              .replace(/\s+/g, " ")
+              .trim(),
+          ),
+          citation_ids: [...new Set(firstJsonArray(segment.citation_ids).map(String))],
+        }))
+        .filter((segment) => segment.text && segment.citation_ids.length);
       return {
         ...item,
         text: normalizeDossierSectionText(item.text, title),
+        citation_ids: [...new Set(firstJsonArray(item.citation_ids).map(String))],
+        segments,
       };
     });
     const reportReady = DOSSIER_SECTION_TITLES.every((title, index) => (
       normalizedBody[index]?.text?.startsWith(`${title}：`)
+      && normalizedBody[index]?.citation_ids?.length
+      && normalizedBody[index]?.segments?.length
+      && normalizedBody[index].segments.every((segment) => segment.citation_ids.length)
     ));
-    if (
-      reportReady
-      && !normalizedBody.some((item) => hasTechnicalErrorText(item.text))
-      && dossierSectionContentErrors(normalizedBody).length === 0
-      && dossierSectionSemanticErrors(normalizedBody, citations, company).length === 0
-    ) {
-      return normalizedBody.slice(0, DOSSIER_SECTION_TITLES.length);
-    }
-    if (normalizedBody.length) {
-      const companyName = cleanEvidenceSummary(
-        String(dossier.title || "").replace(/\s*(?:最近档案|销售情报报告).*/, ""),
-        "该企业",
-        80,
-      );
-      return this.reportDossierBody({
-        ...company,
-        name: company.name || companyName,
-      }, citations, normalizedBody);
-    }
-    const allIds = citations.map((item) => String(item.id));
-    const professionalIds = citations.filter((item) => /专业数据|工商|招投标/.test(`${item.source_kind || ""} ${item.label || ""}`)).map((item) => String(item.id));
-    const webIds = citations.filter((item) => /联网搜索|公开|新闻|公告|媒体|官网/.test(`${item.source_kind || ""} ${item.label || ""}`)).map((item) => String(item.id));
-    const internalIds = citations.filter((item) => /内部资料|OpenViking|历史资料|飞书|会议|文档/.test(`${item.source_kind || ""} ${item.label || ""}`)).map((item) => String(item.id));
-    const hasFixedStructure = body.length >= 4
-      && /^企业情况：/.test(body[0]?.text || "")
-      && /^近期动态：/.test(body[1]?.text || "")
-      && /^销售判断：/.test(body[2]?.text || "")
-      && /^下一步建议：/.test(body[3]?.text || "");
-    if (hasFixedStructure) {
-      const normalized = body.slice(0, 4);
-      const needsRebuild = !professionalIds.length
-        || normalized.some((item) => hasTechnicalErrorText(item.text));
-      if (needsRebuild) {
-        const companyName = cleanEvidenceSummary(String(dossier.title || "").replace(/\s*最近档案.*/, ""), "该企业", 40);
-        return this.fixedDossierBody({ name: companyName }, citations);
-      }
-      return normalized;
-    }
-
-    const legacyCompanyText = cleanEvidenceSummary(body.find((item) => /专业数据|企业情况/.test(item.text || ""))?.text || dossier.summary, "暂未获取到可展示的企业情况。", 520);
-    const latest = cleanEvidenceSummary(body.find((item) => /最新|近期|公告|新闻|招标|公开/.test(item.text || ""))?.text || dossier.summary, "暂未获取到可展示的近期动态。", 520);
-    const judgment = cleanEvidenceSummary(
-      body[1]?.text || "结合专业数据库和联网搜索公开来源，当前信息更适合作为下一轮销售沟通前的背景材料。",
-      "结合专业数据库和联网搜索公开来源，当前信息更适合作为下一轮销售沟通前的背景材料。",
-      520
-    );
-    const next = "围绕预算窗口、采购节奏、供应商准入和数据合规要求继续确认，避免把历史沟通当成最新外部事实。";
-    return [
-      {
-        text: legacyCompanyText.startsWith("企业情况：") ? legacyCompanyText : `企业情况：${legacyCompanyText}`,
-        citation_ids: professionalIds.length ? professionalIds.slice(0, 2) : [],
-      },
-      {
-        text: latest.startsWith("近期动态：") ? latest : `近期动态：${latest}`,
-        citation_ids: webIds.length ? webIds.slice(0, 2) : allIds.slice(0, 1),
-      },
-      {
-        text: judgment.startsWith("销售判断：") ? judgment : `销售判断：${judgment}`,
-        citation_ids: [...new Set([...professionalIds.slice(0, 2), ...webIds.slice(0, 2), ...internalIds.slice(0, 2)])].slice(0, 5),
-      },
-      {
-        text: `下一步建议：${next}`,
-        citation_ids: internalIds.length
-          ? [...new Set([...internalIds.slice(0, 2), ...webIds.slice(0, 2)])].slice(0, 4)
-          : webIds.length ? webIds.slice(0, 2) : allIds.slice(-1),
-      },
-    ];
+    if (!reportReady) return [];
+    if (normalizedBody.some((item) => hasTechnicalErrorText(item.text))) return [];
+    if (dossierSectionContentErrors(normalizedBody).length) return [];
+    if (dossierSectionSemanticErrors(normalizedBody, citations, company).length) return [];
+    if (dossierSectionEvidenceGroundingErrors(normalizedBody, citations).length) return [];
+    return normalizedBody;
   }
 
   progressFromDossier(company, dossier) {
@@ -5130,7 +6138,7 @@ export class SalesService {
           }));
         }
         let validated = result.ok
-          ? validateQaModelAnswer(result.parsed, allowedEvidence, { enumerationRequirements })
+          ? validateQaModelAnswer(result.parsed, allowedEvidence, { enumerationRequirements, question })
           : null;
         const validationErrors = validated?.errors || [];
         if (result.ok && validationErrors.length) {
@@ -5145,7 +6153,7 @@ export class SalesService {
             validationFeedback: validationErrors,
           }));
           validated = result.ok
-            ? validateQaModelAnswer(result.parsed, allowedEvidence, { enumerationRequirements })
+            ? validateQaModelAnswer(result.parsed, allowedEvidence, { enumerationRequirements, question })
             : null;
         }
         if (result.ok) {

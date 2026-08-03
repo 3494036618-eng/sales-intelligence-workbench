@@ -14,7 +14,7 @@ description: 从 0 到 1 搭建、配置、验收和维护真实数据驱动的�
 使用以下版本化入口；其他发行位置也必须固定到已发布的 tag 或经过审核的 commit SHA：
 
 ```text
-帮我初始化销售助手：https://github.com/3494036618-eng/sales-intelligence-workbench/blob/v0.9.2/skills/sales-intelligence-workbench/SKILL.md
+帮我初始化销售助手：https://github.com/3494036618-eng/sales-intelligence-workbench/blob/v0.10.0/skills/sales-intelligence-workbench/SKILL.md
 ```
 
 如果当前环境中不存在 `{baseDir}/scripts/status.mjs`，说明本 Skill 是从远程 URL 打开的。
@@ -39,7 +39,7 @@ description: 从 0 到 1 搭建、配置、验收和维护真实数据驱动的�
 
 “什么也没配置”表示用户不需要预先准备本地项目、依赖或配置文件，不代表可以绕过云服务
 账号、Agent Plan 套餐、AI Native 应用开发底座（Supabase）/Agent 记忆（OpenViking）权限、飞书登录或真实调用费用。用户侧只输入
-一枚 Agent Plan Key；OpenViking 记忆库的内部访问凭证由初始化脚本自动获取和私密保存，
+一枚 Agent Plan Key；Agent 记忆（OpenViking）的内部访问凭证由初始化脚本自动获取和私密保存，
 不得要求用户查找、粘贴或管理第二个 Key。
 
 ## Agent Plan 控制台名称约定
@@ -72,7 +72,7 @@ description: 从 0 到 1 搭建、配置、验收和维护真实数据驱动的�
 
 1. 工作台名称和最重要的销售目标。
 2. 目标行业、区域或客户范围。
-3. 历史资料来源：飞书云文档、飞书群聊/单聊，或首版暂不导入。
+3. 历史资料来源：飞书云文档、飞书群聊/单聊，或本次暂不导入。
 4. 运行方式：本机或受控内网。
 5. 是否已经购买并配置 Agent Plan。
 
@@ -97,7 +97,7 @@ node {baseDir}/scripts/setup.mjs --init \
 node {baseDir}/scripts/onboard.mjs
 ```
 
-它会读取 `setup.mjs` 的阶段状态，自动执行本地安装、交互配置和启动等可恢复步骤；遇到 Supabase 写入、OpenViking 新资源创建、真实 Provider 调用、用户登录、飞书导入或付费业务验收时必须暂停并说明影响。只有用户明确确认后，才能追加相应的 `--apply-*`、`--yes` 或 `--confirm-live`。不得替用户自动创建、暂停或删除云资源。
+它会读取 `setup.mjs` 的阶段状态，自动执行本地安装、交互配置和启动等可恢复步骤；遇到 AI Native 应用开发底座（Supabase）写入、Agent 记忆（OpenViking）新资源创建、真实 Provider 调用、用户登录、飞书导入或付费业务验收时必须暂停并说明影响。只有用户明确确认后，才能追加相应的 `--apply-*`、`--yes` 或 `--confirm-live`。不得替用户自动创建、暂停或删除云资源。
 
 需要只读查看阶段和唯一下一步时运行：
 
@@ -105,7 +105,7 @@ node {baseDir}/scripts/onboard.mjs
 node {baseDir}/scripts/setup.mjs
 ```
 
-Builder 按“业务范围 → 应用 → Agent Plan 模型与能力卡片 → AI Native 应用开发底座（Supabase）→ Agent 记忆（OpenViking）→ 飞书资料 → 真实诊断 → API/Worker → 首批导入 → 业务验收”推进。所有阶段通过前，不要宣称工作台已经可直接使用。
+Builder 按“业务范围 → 应用 → Agent Plan 模型与能力卡片 → AI Native 应用开发底座（Supabase）→ Agent 记忆（OpenViking）→ 飞书资料 → 真实诊断 → API/Worker → 首批导入 → 业务验收”推进。档案由受约束的单 Agent 使用强制严格函数提交完整六章节规划，服务端确定性组装正文并独立执行证据与展示质量门禁；必要时最多定点修订两次，失败时不保存本地拼接报告。所有阶段通过前，不要宣称工作台已经可直接使用。
 
 需要查看进程、地址和 Provider 配置细节时再运行：
 
@@ -143,7 +143,7 @@ node {baseDir}/scripts/configure.mjs
 node {baseDir}/scripts/configure.mjs --from-env-file /绝对路径/.env.local
 ```
 
-工作台不提供运行方式选择，始终连接真实 Provider 和 Supabase。Provider 与 Key 的对应关系见 `references/provider-configuration.md`。
+工作台不提供运行方式选择，始终连接真实 Provider 和 AI Native 应用开发底座（Supabase）。Provider 与 Key 的对应关系见 `references/provider-configuration.md`。
 
 ## 4. 初始化数据库
 
@@ -155,7 +155,7 @@ byted-supabase-cli login --profile agent-plan --region cn-beijing --is-agent-pla
 
 这里完成的是火山账号 OAuth 授权，不是要求用户输入另一枚 Key。需要新建时，先确认费用与休眠策略，再由具备 `aidap:CreateWorkspace` 权限的账号执行 `projects create --profile agent-plan --is-agent-plan`。
 
-已有火山 Supabase Workspace 时，先查看不会写入的初始化计划：
+已有 AI Native 应用开发底座（Supabase）Workspace 时，先查看不会写入的初始化计划：
 
 ```bash
 node {baseDir}/scripts/setup-supabase.mjs
@@ -171,7 +171,7 @@ node {baseDir}/scripts/setup-supabase.mjs \
   --yes
 ```
 
-该命令先只读核验 Workspace 的 Agent Plan 属性与 Running 状态，再自动读取 Data API 地址和后端内部凭据、保存到本机私密配置、应用迁移、创建应用 Workspace 记录并回读验证。用户无需输入 Supabase Key、Data API 地址或火山 AK/SK；命令不会创建、暂停或删除云 Workspace。
+该命令先只读核验 Workspace 的 Agent Plan 属性与 Running 状态，再自动读取 Data API 地址和后端内部凭据、保存到本机私密配置、应用迁移、创建应用 Workspace 记录并回读验证。用户无需输入 Supabase Key、Data API 地址或火山 AK/SK；命令不会创建、暂停或删除 AI Native 应用开发底座（Supabase）Workspace。
 
 已有完整 Data API 配置、只需检查迁移时运行：
 
@@ -179,7 +179,7 @@ node {baseDir}/scripts/setup-supabase.mjs \
 node {baseDir}/scripts/migrate.mjs
 ```
 
-用户确认将修改目标 Supabase 后再应用：
+用户确认将修改目标 AI Native 应用开发底座（Supabase）后再应用：
 
 ```bash
 node {baseDir}/scripts/migrate.mjs --apply
@@ -187,7 +187,7 @@ node {baseDir}/scripts/migrate.mjs --apply
 
 不要对来源不明的现有生产库直接迁移。
 
-## 5. 初始化 OpenViking 记忆库
+## 5. 初始化 Agent 记忆（OpenViking）
 
 先用 Agent Plan Key 只读列出当前账号的记忆库：
 
@@ -210,9 +210,9 @@ node {baseDir}/scripts/setup-openviking.mjs \
   --yes
 ```
 
-脚本通过官方 OpenViking 控制面等待资源进入 `READY`，再自动获取该记忆库的内部访问凭证并
+脚本通过 Agent 记忆（OpenViking）官方控制面等待资源进入 `READY`，再自动获取该记忆库的内部访问凭证并
 以 `0600` 写入本机私密配置。内部凭证不得显示到终端、聊天、前端或文档，也不得要求用户
-输入。已有官方 OpenViking CLI 配置或已完成内部配置时直接复用，不重复创建资源。
+输入。已有 Agent 记忆（OpenViking）官方 CLI 配置或已完成内部配置时直接复用，不重复创建资源。
 
 ## 6. 诊断并启动
 
@@ -237,15 +237,9 @@ node {baseDir}/scripts/start.mjs
 node {baseDir}/scripts/status.mjs
 ```
 
-首次打开页面时设置唯一的本机管理员用户名和密码，无需邮箱、邮件确认或公开注册。之后所有业务页面和写操作都要求该管理员登录。
+首次打开页面时设置唯一的本机管理员用户名和密码，无需邮箱、邮件确认或公开注册。设置完成后直接进入工作台；后续使用同一浏览器打开时自动恢复本机会话，只有主动退出或会话失效时才使用原用户名和密码再次登录。
 
-当前 Beta 是单工作区、单管理员，以及本机或受控内网自托管模式，没有成员或角色系统，也不承诺公网生产 SaaS 或 SLA。忘记密码时只能在安装工作台的本机交互式重置，不能要求用户接收邮件：
-
-```bash
-node {baseDir}/scripts/reset-password.mjs
-```
-
-密码必须隐藏输入，不得放入命令行参数、日志、聊天或仓库。
+当前版本支持单工作区、单管理员，以及本机或受控内网部署，没有成员或角色系统，也不提供公网托管 SaaS 或 SLA。密码不得放入命令行参数、日志、聊天或仓库。
 
 后端和前端由同一进程、同一地址提供；不要另开静态前端。停止不会删除配置和数据：
 
@@ -253,7 +247,7 @@ node {baseDir}/scripts/reset-password.mjs
 node {baseDir}/scripts/stop.mjs
 ```
 
-`start.mjs` 同时管理同源 API 和独立任务 Worker；`status.mjs` 中 `running` 与 `worker_running` 都应为 `true`。档案和 OpenViking 批量同步由 Worker 执行，不能只启动 API。运行中取消只登记请求，Worker 到达安全检查点后才释放付费预约并允许重试。
+`start.mjs` 同时管理同源 API 和独立任务 Worker；`status.mjs` 中 `running` 与 `worker_running` 都应为 `true`。档案和 Agent 记忆（OpenViking）批量同步由 Worker 执行，不能只启动 API。运行中取消只登记请求，Worker 到达安全检查点后才释放付费预约并允许重试。
 
 ## 7. 导入飞书资料
 
@@ -271,7 +265,7 @@ node {baseDir}/scripts/import-feishu.mjs \
   --doc "https://example.feishu.cn/wiki/..."
 ```
 
-会话导入可使用 `--p2p-user <联系人姓名>` 或 `--chat-id <oc_会话ID>`；云文档只接受完整链接。启用 `FEISHU_CLI_IMPORT_ENABLED=true` 后，本机管理员也可在“历史资料”模块使用“导入飞书资料”。两种入口都会先由 `lark-cli` 读取：正文只写入当前企业的 OpenViking 目录，Supabase 只保存来源、游标、内容指纹和 OpenViking 引用。
+会话导入可使用 `--p2p-user <联系人姓名>` 或 `--chat-id <oc_会话ID>`；云文档只接受完整链接。启用 `FEISHU_CLI_IMPORT_ENABLED=true` 后，本机管理员也可在“历史资料”模块使用“导入飞书资料”。两种入口都会先由 `lark-cli` 读取：正文只写入当前企业的 Agent 记忆（OpenViking）目录，AI Native 应用开发底座（Supabase）只保存来源、游标、内容指纹和 OpenViking 引用。
 成功导入后，Builder 仅保存时间、企业 ID 和来源类型的脱敏回执，不复制飞书正文或凭证。
 
 使用结束后可删除本机 CLI 会话：
@@ -282,7 +276,7 @@ node {baseDir}/scripts/logout.mjs
 
 ## 8. 验收真实链路
 
-`verify-real-chain.mjs` 只做模型、DataPro、豆包搜索、OpenViking 和 Supabase 的最小只读诊断，不写业务数据，不能替代产品验收：
+`verify-real-chain.mjs` 只做 Agent Plan 模型、专业数据集（DataPro）、豆包搜索（联网搜索）、Agent 记忆（OpenViking）和 AI Native 应用开发底座（Supabase）的最小只读诊断，不写业务数据，不能替代产品验收：
 
 ```bash
 node {baseDir}/scripts/verify-real-chain.mjs
@@ -299,7 +293,7 @@ node {baseDir}/scripts/verify-business-chain.mjs \
   --confirm-live
 ```
 
-该命令会产生 AFP/Token，并保留 Supabase 中的企业/档案/任务记录及 OpenViking 中的问答 Session，不会自动删除。完整产品验收还必须补充：飞书增量导入、从 OpenViking 重启恢复正文与问答、再次生成后的版本比较、备份恢复和浏览器端操作。任一步使用固定前端数据都不通过。
+该命令会产生 AFP/Token，并保留 AI Native 应用开发底座（Supabase）中的企业/档案/任务记录及 Agent 记忆（OpenViking）中的问答 Session，不会自动删除。完整产品验收还必须补充：飞书增量导入、从 Agent 记忆（OpenViking）重启恢复正文与问答、再次生成后的版本比较、备份恢复和浏览器端操作。任一步使用固定前端数据都不通过。
 验收通过后，Builder 保存不含档案正文、问题答案和密钥的脱敏回执，供 `setup.mjs` 判断搭建是否完成。
 
 应用队列迁移后，在不调用 Agent Plan 外部能力的情况下验证数据库原子语义：

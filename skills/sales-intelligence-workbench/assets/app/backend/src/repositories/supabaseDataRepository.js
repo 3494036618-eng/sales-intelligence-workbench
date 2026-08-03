@@ -79,7 +79,7 @@ export class SupabaseDataRepository {
       const [migrations, workspaces] = await Promise.all([
         this.provider.select("schema_migrations", {
           select: "version",
-          filters: { version: "eq.202607280002" },
+          filters: { version: "eq.202607300001" },
           limit: 1,
         }),
         this.provider.select("app_workspaces", {
@@ -542,6 +542,8 @@ export class SupabaseDataRepository {
       lease_expires_at: job.lease_expires_at || null,
       heartbeat_at: job.heartbeat_at || null,
       cancel_requested_at: job.cancel_requested_at || null,
+      checkpoint_json: job.checkpoint || job.checkpoint_json || {},
+      progress_detail_json: job.progress_detail || job.progress_detail_json || {},
       created_by: job.created_by || null,
       created_at: job.created_at || nowIso(),
       updated_at: job.updated_at || nowIso(),
@@ -579,6 +581,21 @@ export class SupabaseDataRepository {
       p_stage: stage,
       p_progress: Number(progress || 1),
       p_lease_seconds: Number(leaseSeconds || 600),
+    });
+    return this.jobView(result);
+  }
+
+  async saveJobCheckpoint(jobId, workerId, checkpointPatch = {}, options = {}) {
+    await this.ensureSalesReady();
+    const result = await this.provider.rpc("checkpoint_sales_job", {
+      p_workspace_id: this.workspaceId,
+      p_job_id: jobId,
+      p_worker_id: workerId,
+      p_stage: options.stage || "running",
+      p_progress: Number(options.progress || 1),
+      p_progress_detail: options.detail || {},
+      p_checkpoint_patch: checkpointPatch || {},
+      p_lease_seconds: Number(options.lease_seconds || 600),
     });
     return this.jobView(result);
   }
@@ -705,6 +722,8 @@ export class SupabaseDataRepository {
       lease_expires_at: row.lease_expires_at || saved.lease_expires_at || null,
       heartbeat_at: row.heartbeat_at || saved.heartbeat_at || null,
       cancel_requested_at: row.cancel_requested_at || saved.cancel_requested_at || null,
+      checkpoint: row.checkpoint_json || saved.checkpoint || {},
+      progress_detail: row.progress_detail_json || saved.progress_detail || {},
       created_by: row.created_by || saved.created_by || null,
       created_at: row.created_at,
       updated_at: row.updated_at,

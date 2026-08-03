@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { deriveEvidenceDataAsOf } from "./claimGrounding.js";
 
 const COMPANY_SUFFIXES = [
   "股份有限公司",
@@ -17,6 +18,17 @@ const OFFICIAL_PUBLIC_HOSTS = [
   "hkexnews.hk",
   "cninfo.com.cn",
 ];
+const NON_SUBSTANTIVE_PUBLIC_CONTENT_PATTERNS = [
+  /for better experience.{0,80}(?:verification|verify)/i,
+  /(?:complete|pass).{0,40}(?:the )?verification process/i,
+  /(?:verify you are human|captcha|access denied|robot check|security check)/i,
+  /(?:请|需要).{0,16}(?:完成|通过).{0,12}(?:人机|安全|访问|滑动)?验证/u,
+  /(?:人机验证|安全验证|访问验证|滑动验证|验证码页面|页面不存在|内容已下线)/u,
+];
+const QA_GAP_HEADING_PATTERN = /^(?:缺口|资料缺口|信息缺口|证据缺口|覆盖缺口)[：:]/u;
+const QA_GAP_REQUEST_PATTERN = /缺口|缺失|不足|未覆盖|还缺|需要补充|哪些资料没有/u;
+const QA_RISK_HEADING_PATTERN = /^(?:风险|主要风险|关注事项)[：:]/u;
+const QA_ACTION_HEADING_PATTERN = /^(?:跟进行动|行动|建议|下一步)(?:[一二三四五六七八九十]|\d+)?[：:]/u;
 const CRITICAL_FACT_PATTERNS = [
   { field: "registered_capital", label: "注册资本", pattern: /注册资本(?:为|是|达到|约为|约|[:：])?\s*([+-]?\d[\d,.]*(?:\.\d+)?\s*(?:亿|万)?\s*(?:人民币|美元|元))/gi },
   { field: "revenue", label: "营业收入", pattern: /(?:营业收入|营收)(?:为|达到|约为|约|[:：])?\s*([+-]?\d[\d,.]*(?:\.\d+)?\s*(?:亿|万)?\s*(?:人民币|美元|元|%|％))/gi },
@@ -69,6 +81,17 @@ function text(value, maxLength = 12000) {
   return String(value || "")
     .normalize("NFKC")
     .replace(/[\u0000-\u001F\u007F]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, maxLength);
+}
+
+function dossierEvidenceText(value, maxLength = 1600) {
+  return text(value, maxLength * 2)
+    .replace(/<[^>]+>/g, " ")
+    .replace(/(?:查看详情|查看更多|点击查看|立即注册|免费查看|登录后查看)\s*>*/gu, " ")
+    .replace(/(?:案号|序号|操作)复制/gu, "$1")
+    .replace(/\bUntitled\b/giu, " ")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, maxLength);
@@ -477,16 +500,16 @@ function shortCompanyName(value) {
   return normalizedCompanyName(name);
 }
 
+function parentheticalBrandAlias(value) {
+  const match = text(value, 160).match(/^([^（）()]{2,16})\s*[（(]\s*(?:中国|China)\s*[）)]/iu);
+  return normalizedCompanyName(match?.[1] || "");
+}
+
 function validIso(value) {
   const raw = text(value, 80);
   if (!raw) return null;
   const timestamp = new Date(raw).getTime();
   return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : null;
-}
-
-function latestIso(values, fallback = null) {
-  const dates = values.map(validIso).filter(Boolean).sort();
-  return dates.at(-1) || fallback;
 }
 
 function hostname(value) {
@@ -614,7 +637,18 @@ function evidenceConflicts(items) {
   return conflicts;
 }
 
-function evidencePolicy(items, conflicts) {
+function evidenceAnchorsLegalEntity(item, entity) {
+  if (item?.source_kind !== "professional") return false;
+  const sourceText = normalizedCompanyName(`${item.label || ""} ${item.summary || ""}`);
+  const canonicalName = normalizedCompanyName(entity?.canonical_name || "");
+  const creditCode = normalizedCompanyName(entity?.identifiers?.unified_social_credit_code || "");
+  return Boolean(
+    (canonicalName && sourceText.includes(canonicalName))
+    || (creditCode && sourceText.includes(creditCode))
+  );
+}
+
+function evidencePolicy(items, conflicts, entity = {}) {
   const counts = { professional: 0, public: 0, internal: 0 };
   for (const item of items) counts[item.source_kind] = Number(counts[item.source_kind] || 0) + 1;
   const warnings = [];
@@ -627,6 +661,8 @@ function evidencePolicy(items, conflicts) {
     schema_version: 1,
     source_counts: counts,
     authoritative_external_count: items.filter((item) => item.source_kind !== "internal" && item.quality_tier === 1).length,
+    legal_entity_anchor_count: items.filter((item) => evidenceAnchorsLegalEntity(item, entity)).length,
+    alias_scoped_count: items.filter((item) => item.entity_match === "alias_scoped").length,
     traceable_public_count: items.filter((item) => item.source_kind === "public" && item.quality_tier <= 2 && hostname(item.url)).length,
     current_public_count: items.filter((item) => item.source_kind === "public" && item.freshness === "current").length,
     stale_count: staleCount,
@@ -634,6 +670,19 @@ function evidencePolicy(items, conflicts) {
     conflict_count: conflicts.length,
     warnings,
   };
+}
+
+function evidenceRejectionReason(item) {
+  if (item.entity_match === "unverified") return "entity_not_verified";
+  if (
+    item.source_kind === "public"
+    && NON_SUBSTANTIVE_PUBLIC_CONTENT_PATTERNS.some((pattern) => (
+      pattern.test(`${item.label || ""} ${item.summary || ""}`)
+    ))
+  ) {
+    return "content_not_substantive";
+  }
+  return "";
 }
 
 function sourceKindLabel(kind) {
@@ -663,7 +712,7 @@ function entityMatch(kind, source, entity) {
 }
 
 function normalizeEvidence(kind, source, entity, generatedAt) {
-  const summary = text(source.summary || source.abstract || source.text, 1600);
+  const summary = dossierEvidenceText(source.summary || source.abstract || source.text, 1600);
   const identity = evidenceIdentity(kind, source, entity);
   if (!summary || !identity) return null;
   const publishedAt = validIso(source.published_at || source.publish_time || source.occurred_at);
@@ -687,6 +736,7 @@ function normalizeEvidence(kind, source, entity, generatedAt) {
     raw_ref: text(source.raw_ref, 500),
     query: text(source.query, 500),
     purpose: text(source.purpose, 160),
+    site_name: kind === "public" ? text(source.site_name, 160) : "",
     published_at: publishedAt,
     source_updated_at: sourceUpdatedAt,
     observed_at: validIso(source.observed_at) || generatedAt,
@@ -719,7 +769,10 @@ export function resolveCompanyEntity(company = {}) {
     normalizedCompanyName(canonicalName),
     shortCompanyName(canonicalName),
   ].filter((item, index, values) => item && values.indexOf(item) === index);
-  const contextualAliases = (Array.isArray(company.aliases) ? company.aliases.map(normalizedCompanyName) : [])
+  const contextualAliases = [
+    ...(Array.isArray(company.aliases) ? company.aliases.map(normalizedCompanyName) : []),
+    parentheticalBrandAlias(canonicalName),
+  ]
     .filter((item, index, values) => (
       item
       && !strictAliases.includes(item)
@@ -748,10 +801,14 @@ export function buildDossierEvidencePack({ company, collected = {}, memoryContex
     ...(memoryContexts || []).map((source) => normalizeEvidence("internal", source, entity, generatedAt)),
   ].filter(Boolean);
   const rejected = candidates
-    .filter((item) => item.entity_match === "unverified")
-    .map((item) => ({ id: item.id, label: item.label, reason: "entity_not_verified" }));
+    .map((item) => ({
+      id: item.id,
+      label: item.label,
+      reason: evidenceRejectionReason(item),
+    }))
+    .filter((item) => item.reason);
   let items = candidates
-    .filter((item) => item.entity_match !== "unverified")
+    .filter((item) => !evidenceRejectionReason(item))
     .sort((a, b) => a.source_kind.localeCompare(b.source_kind) || a.id.localeCompare(b.id));
   const conflicts = evidenceConflicts(items);
   const conflictFieldsByEvidence = new Map();
@@ -768,7 +825,7 @@ export function buildDossierEvidencePack({ company, collected = {}, memoryContex
     conflict_fields: [...new Set(conflictFieldsByEvidence.get(item.id) || [])],
   }));
   const evidenceHash = digest(JSON.stringify(items.map(hashableEvidence)));
-  const dataAsOf = latestIso(items.flatMap((item) => [item.published_at, item.source_updated_at]));
+  const dataAsOf = deriveEvidenceDataAsOf(items, generatedAt);
   return {
     entity,
     items,
@@ -777,16 +834,16 @@ export function buildDossierEvidencePack({ company, collected = {}, memoryContex
     data_as_of: dataAsOf,
     collected_at: generatedAt,
     conflicts,
-    policy: evidencePolicy(items, conflicts),
+    policy: evidencePolicy(items, conflicts, entity),
   };
 }
 
 export function validateProductionEvidencePack(pack = {}) {
-  const policy = pack.policy || evidencePolicy(pack.items || [], pack.conflicts || []);
+  const policy = pack.policy || evidencePolicy(pack.items || [], pack.conflicts || [], pack.entity || {});
   const errors = [];
-  if (!policy.authoritative_external_count) errors.push("缺少可核验的专业或官方外部来源");
-  if (!policy.traceable_public_count) errors.push("缺少带原始链接的可追溯公开来源");
-  if (!policy.current_public_count) errors.push("缺少 180 天内带日期的公开来源，不能生成“最新”档案");
+  if (!policy.legal_entity_anchor_count) {
+    errors.push("缺少能够用法定名称或统一社会信用代码确认目标主体的专业来源");
+  }
   return { ok: errors.length === 0, errors, policy };
 }
 
@@ -805,6 +862,7 @@ export function evidencePackCitations(pack = {}) {
     raw_ref: item.raw_ref,
     query: item.query,
     purpose: item.purpose,
+    site_name: item.site_name,
     published_at: item.published_at,
     source_updated_at: item.source_updated_at,
     entity_match: item.entity_match,
@@ -1049,9 +1107,10 @@ function independentExternalSources(items) {
   return [...keys].filter(Boolean);
 }
 
-function hasHighRiskAssertion(value) {
+export function hasHighRiskAssertion(value) {
   const input = text(value, 2000);
   if (extractCriticalClaims(input).length) return true;
+  if (/(?:20\d{2}[-/.\u5e74]\d{1,2}(?:[-/.\u6708]\d{1,2}\u65e5?)?)[^\u3002\uff1b\n]{0,24}(?:\u884c\u653f\u5904\u7f5a|\u53f8\u6cd5\u8bc9\u8bbc|\u5931\u4fe1\u88ab\u6267\u884c|\u9650\u5236\u9ad8\u6d88\u8d39|\u7ecf\u8425\u5f02\u5e38|\u76d1\u7ba1\u5904\u7f5a)/u.test(input)) return true;
   return /(?:(?:未发现|未涉及|不存在|存在|涉及|新增|发生|受到|列入|被执行|累计|共计).{0,18}(?:行政处罚|诉讼|失信|执行案件|经营异常|重大风险))|(?:(?:行政处罚|诉讼|失信|被执行|经营异常|重大风险).{0,18}(?:未发现|不存在|存在|涉及|新增|\d))/i.test(input);
 }
 
@@ -1081,18 +1140,28 @@ export function validateDossierModelAnswer(parsed = {}, evidence = []) {
   const allowed = new Map((evidence || []).map((item) => [String(item.id), item]));
   const errors = [];
   const body = (Array.isArray(parsed.body) ? parsed.body : []).map((paragraph, index) => {
-    const requested = [...new Set((paragraph.citation_ids || []).map(String))];
-    const citationIds = requested.filter((id) => allowed.has(id));
     const paragraphText = text(paragraph.text, 1400)
       .replace(/^([^：:]{2,18}):/, "$1：");
-    if (requested.length !== citationIds.length) errors.push(`body[${index}] 包含无效引用`);
-    if (!citationIds.length) errors.push(`body[${index}] 缺少有效引用`);
-    const citations = citationIds.map((id) => allowed.get(id));
-    if (citations.some(isInternalEvidence)) {
-      errors.push(`body[${index}] 使用内部资料支撑外部事实`);
-    }
-    errors.push(...highRiskSupportErrors({ text: paragraphText }, citations, `body[${index}]`));
-    return { text: paragraphText, citation_ids: citationIds };
+    const rawSegments = Array.isArray(paragraph.segments) && paragraph.segments.length
+      ? paragraph.segments
+      : [{ text: paragraphText, citation_ids: paragraph.citation_ids || [] }];
+    const segments = rawSegments.map((segment, segmentIndex) => {
+      const requested = [...new Set((segment.citation_ids || []).map(String))];
+      const citationIds = requested.filter((id) => allowed.has(id));
+      const segmentText = text(segment.text, 800);
+      const path = `body[${index}].segments[${segmentIndex}]`;
+      if (requested.length !== citationIds.length) errors.push(`${path} 包含无效引用`);
+      if (!citationIds.length) errors.push(`${path} 缺少有效引用`);
+      const citations = citationIds.map((id) => allowed.get(id));
+      if (citations.some(isInternalEvidence)) {
+        errors.push(`${path} 使用内部资料支撑外部事实`);
+      }
+      errors.push(...highRiskSupportErrors({ text: segmentText }, citations, path));
+      return { text: segmentText, citation_ids: citationIds };
+    }).filter((segment) => segment.text);
+    const citationIds = [...new Set(segments.flatMap((segment) => segment.citation_ids))];
+    if (!segments.length) errors.push(`body[${index}] 缺少正文段落`);
+    return { text: paragraphText, citation_ids: citationIds, segments };
   }).filter((paragraph) => paragraph.text);
   if (body.length !== DOSSIER_SECTION_TITLES.length) {
     errors.push(`档案正文必须包含 ${DOSSIER_SECTION_TITLES.length} 个有引用的固定章节`);
@@ -1107,12 +1176,18 @@ export function validateDossierModelAnswer(parsed = {}, evidence = []) {
 
 export function validateQaModelAnswer(parsed = {}, evidence = [], options = {}) {
   const allowed = new Map((evidence || []).map((item) => [String(item.id), item]));
-  const sourceParagraphs = Array.isArray(parsed.paragraphs)
+  const rawParagraphs = Array.isArray(parsed.paragraphs)
     ? parsed.paragraphs
     : parsed.answer
       ? [{ text: parsed.answer, citation_ids: parsed.citation_ids || parsed.citation_source_ids || [] }]
       : [];
   const insufficient = Boolean(parsed.insufficient);
+  const asksForGap = QA_GAP_REQUEST_PATTERN.test(qaText(options.question, 1200));
+  const sourceParagraphs = insufficient || asksForGap
+    ? rawParagraphs
+    : rawParagraphs.filter((paragraph) => (
+      !QA_GAP_HEADING_PATTERN.test(qaText(paragraph?.text, 900))
+    ));
   const errors = [];
   const paragraphs = sourceParagraphs.map((paragraph, index) => {
     const requested = [...new Set((paragraph.citation_ids || []).map(String))];
@@ -1125,6 +1200,23 @@ export function validateQaModelAnswer(parsed = {}, evidence = [], options = {}) 
     };
     if (!insufficient) {
       errors.push(...highRiskSupportErrors(normalized, citationIds.map((id) => allowed.get(id)), `paragraphs[${index}]`));
+      const citedEvidence = citationIds.map((id) => allowed.get(id)).filter(Boolean);
+      const dossierEvidence = citedEvidence.filter((item) => item.source_kind === "企业档案");
+      if (
+        QA_RISK_HEADING_PATTERN.test(normalized.text)
+        && dossierEvidence.length
+        && !dossierEvidence.some((item) => /(?:^|·\s*)风险与关注事项/u.test(String(item.label || "")))
+      ) {
+        errors.push(`paragraphs[${index}] 的风险结论未引用档案中的“风险与关注事项”章节`);
+      }
+      if (QA_ACTION_HEADING_PATTERN.test(normalized.text) && dossierEvidence.length) {
+        const bestOverlap = Math.max(0, ...dossierEvidence.map((item) => (
+          qaLexicalSimilarity(qaLexemes(normalized.text), item.summary || "")
+        )));
+        if (bestOverlap < 0.03) {
+          errors.push(`paragraphs[${index}] 的行动建议与所引用档案章节不匹配`);
+        }
+      }
     }
     return normalized;
   }).filter((paragraph) => paragraph.text);

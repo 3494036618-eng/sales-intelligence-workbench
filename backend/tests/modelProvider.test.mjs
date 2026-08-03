@@ -26,6 +26,55 @@ test("model timeout is configurable and bounded", () => {
   assert.equal(new ModelProvider({ env: env({ MODEL_TIMEOUT_MS: "600000" }) }).timeoutMs, 300_000);
 });
 
+test("required function calls retry one transient upstream failure", async () => {
+  let callCount = 0;
+  const provider = new ModelProvider({
+    env: env({
+      AGENT_PLAN_API_KEY: "test-agent-plan-key",
+      MODEL_BASE_URL: "https://ark.example.test/api/plan/v3",
+      MODEL_NAME: "ark-code-latest",
+      MODEL_MAX_RETRIES: "1",
+    }),
+    sleep: async () => {},
+    fetchImpl: async () => {
+      callCount += 1;
+      if (callCount === 1) {
+        return new Response(JSON.stringify({
+          error: { code: "service_unavailable", message: "Service temporarily unavailable." },
+        }), { status: 503, headers: { "Content-Type": "application/json" } });
+      }
+      return new Response(JSON.stringify({
+        id: "resp_function_retry",
+        status: "completed",
+        output: [{
+          type: "function_call",
+          call_id: "call_retry",
+          name: "submit_sales_dossier",
+          arguments: "{\"summary\":\"ready\"}",
+        }],
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    },
+  });
+
+  const result = await provider.callRequiredFunction({
+    system: "Call the required tool.",
+    payload: { task: "probe" },
+    functionName: "submit_sales_dossier",
+    functionDescription: "Submit dossier.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: { summary: { type: "string" } },
+      required: ["summary"],
+    },
+  });
+
+  assert.equal(callCount, 2);
+  assert.equal(result.ok, true);
+  assert.equal(result.attempts, 2);
+  assert.deepEqual(result.parsed, { summary: "ready" });
+});
+
 test("structured model calls use the Agent Plan Responses API and normalize usage", async () => {
   let captured;
   const provider = new ModelProvider({
@@ -141,4 +190,157 @@ test("invalid structured output is retained only as bounded in-memory repair inp
   assert.equal(result.error.code, "invalid_json");
   assert.equal(result.invalid_content, malformed);
   assert.equal(result.raw_ref, "model:resp_invalid_json");
+});
+
+test("required function calls use a strict single-tool Responses contract", async () => {
+  let captured;
+  const provider = new ModelProvider({
+    env: env({
+      AGENT_PLAN_API_KEY: "test-agent-plan-key",
+      MODEL_BASE_URL: "https://ark.example.test/api/plan/v3",
+      MODEL_NAME: "ark-code-latest",
+      MODEL_RUN_ENABLED: "true",
+    }),
+    fetchImpl: async (url, options) => {
+      captured = { url, body: JSON.parse(options.body) };
+      return new Response(JSON.stringify({
+        id: "resp_function_1",
+        status: "completed",
+        model: "ark-code-latest",
+        output: [{
+          type: "function_call",
+          call_id: "call_dossier_1",
+          name: "submit_sales_dossier",
+          arguments: "{\"summary\":\"ready\"}",
+        }],
+        usage: {
+          input_tokens: 40,
+          output_tokens: 12,
+          total_tokens: 52,
+        },
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    },
+  });
+  const parameters = {
+    type: "object",
+    additionalProperties: false,
+    properties: { summary: { type: "string" } },
+    required: ["summary"],
+  };
+
+  const result = await provider.callRequiredFunction({
+    operation: "dossier_agent",
+    system: "Call the required tool.",
+    payload: { task: "probe" },
+    functionName: "submit_sales_dossier",
+    functionDescription: "Submit dossier.",
+    parameters,
+    maxTokens: 900,
+  });
+
+  assert.equal(captured.url, "https://ark.example.test/api/plan/v3/responses");
+  assert.equal(captured.body.store, false);
+  assert.equal(captured.body.tool_choice, "required");
+  assert.equal(captured.body.text, undefined);
+  assert.deepEqual(captured.body.tools, [{
+    type: "function",
+    name: "submit_sales_dossier",
+    description: "Submit dossier.",
+    strict: true,
+    parameters,
+  }]);
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.parsed, { summary: "ready" });
+  assert.equal(result.function_call_id, "call_dossier_1");
+  assert.equal(result.raw_ref, "model:resp_function_1");
+  assert.deepEqual(result.usage, {
+    prompt_tokens: 40,
+    completion_tokens: 12,
+    total_tokens: 52,
+  });
+});
+
+test("required function calls reject incomplete responses before parsing output", async () => {
+  const provider = new ModelProvider({
+    env: env({
+      AGENT_PLAN_API_KEY: "test-agent-plan-key",
+      MODEL_BASE_URL: "https://ark.example.test/api/plan/v3",
+      MODEL_NAME: "ark-code-latest",
+    }),
+    fetchImpl: async () => new Response(JSON.stringify({
+      id: "resp_function_incomplete",
+      status: "incomplete",
+      incomplete_details: { reason: "max_output_tokens" },
+      output: [],
+    }), { status: 200, headers: { "Content-Type": "application/json" } }),
+  });
+
+  const result = await provider.callRequiredFunction({
+    system: "Call the required tool.",
+    payload: { task: "probe" },
+    functionName: "submit_sales_dossier",
+    functionDescription: "Submit dossier.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: { summary: { type: "string" } },
+      required: ["summary"],
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, "incomplete_response");
+  assert.equal(result.error.retryable, true);
+  assert.equal(result.raw_ref, "model:resp_function_incomplete");
+});
+
+test("required function calls reject missing or malformed tool arguments", async () => {
+  const responses = [
+    {
+      id: "resp_function_missing",
+      status: "completed",
+      output: [{ type: "message", content: [{ type: "output_text", text: "plain text" }] }],
+    },
+    {
+      id: "resp_function_invalid",
+      status: "completed",
+      output: [{
+        type: "function_call",
+        call_id: "call_invalid",
+        name: "submit_sales_dossier",
+        arguments: "{\"summary\":",
+      }],
+    },
+  ];
+  const provider = new ModelProvider({
+    env: env({
+      AGENT_PLAN_API_KEY: "test-agent-plan-key",
+      MODEL_BASE_URL: "https://ark.example.test/api/plan/v3",
+      MODEL_NAME: "ark-code-latest",
+    }),
+    fetchImpl: async () => new Response(JSON.stringify(responses.shift()), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }),
+  });
+  const request = {
+    system: "Call the required tool.",
+    payload: { task: "probe" },
+    functionName: "submit_sales_dossier",
+    functionDescription: "Submit dossier.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: { summary: { type: "string" } },
+      required: ["summary"],
+    },
+  };
+
+  const missing = await provider.callRequiredFunction(request);
+  const invalid = await provider.callRequiredFunction(request);
+
+  assert.equal(missing.ok, false);
+  assert.equal(missing.error.code, "missing_function_call");
+  assert.equal(invalid.ok, false);
+  assert.equal(invalid.error.code, "invalid_function_arguments");
 });

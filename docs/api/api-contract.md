@@ -79,9 +79,10 @@ Bearer 请求不依赖浏览器 Cookie，因此不要求 CSRF Header。
 
 ### 访问边界
 
-当前 Beta 只有一个本机管理员。首次使用通过 bootstrap 设置用户名和密码，之后 bootstrap
-永久关闭；邮箱确认和邮件找回流程不会启用。数据库中的账号归属记录只用于鉴权与工作区
-数据隔离，不构成额外的用户账号能力。
+当前版本只有一个本机管理员。首次使用通过 bootstrap 设置用户名和密码，之后 bootstrap
+永久关闭；设置成功后浏览器保存长期会话，并在短期访问令牌过期时自动续期。产品只提供
+首次设置、登录和退出，不提供注册、邮箱确认或成员管理。数据库中的账号归属记录只用于
+鉴权与数据隔离，不构成额外的用户账号能力。
 
 ## 3. 接口清单
 
@@ -97,9 +98,6 @@ Bearer 请求不依赖浏览器 Cookie，因此不要求 CSRF Header。
 | POST | `/api/auth/logout` | 退出浏览器会话 |
 | POST | `/api/auth/cli-login` | 创建 CLI 管理员会话 |
 | POST | `/api/auth/cli-refresh` | 刷新 CLI 用户会话 |
-
-忘记密码时不调用公开 HTTP 接口，也不发送邮件。管理员必须在安装工作台的本机交互式运行
-`skills/sales-intelligence-workbench/scripts/reset-password.mjs`。
 
 ### 运维管理
 
@@ -135,7 +133,7 @@ POST /api/providers/supabase/probe
 | GET | `/api/target-enterprises/:enterprise_id` | 本机管理员 | 企业、档案、资料和问答聚合详情 |
 | GET | `/api/target-enterprises/:enterprise_id/progress` | 本机管理员 | 查询销售进展 |
 | GET | `/api/target-enterprises/:enterprise_id/dossiers` | 本机管理员 | 查询企业档案版本 |
-| POST | `/api/target-enterprises/:enterprise_id/dossiers` | 本机管理员 | 创建异步档案生成任务 |
+| POST | `/api/target-enterprises/:enterprise_id/dossiers` | 本机管理员 | 创建异步档案 Agent 任务；严格函数提交和服务端质量门禁均通过后才保存新版本 |
 | GET | `/api/dossiers/:dossier_id` | 本机管理员 | 查询档案正文和公开引用 |
 | GET | `/api/target-enterprises/:enterprise_id/materials` | 本机管理员 | 查询已导入资料 |
 | GET | `/api/target-enterprises/:enterprise_id/materials/sources` | 本机管理员 | 查询资料同步源 |
@@ -258,6 +256,7 @@ Open ID。该任务调用本机已授权的 `lark-cli`，不会接收或返回�
   "status": "running",
   "stage": "collecting_evidence",
   "stage_label": "正在收集可信资料",
+  "stage_detail": "正在核验专业资料 2/4",
   "progress": 8,
   "entity_id": "company_...",
   "attempt_count": 1,
@@ -270,7 +269,10 @@ Open ID。该任务调用本机已授权的 `lark-cli`，不会接收或返回�
 
 任务由独立 Worker 原子领取并持有租约。运行中取消先进入 `cancelling`；只有 Worker 在
 当前外部调用返回后的安全检查点确认，任务才变为 `cancelled` 并释放付费并发名额。
-预约付费资源后的进程中断不会自动重放，必须由工作区负责人显式重试。
+任务只对超时、限流、网络和上游临时故障执行有界退避重试。档案任务逐项保存已完成的只读
+查询和证据包，重试时只继续未完成查询，不重复已经成功的 Provider 调用；鉴权、配置、请求
+校验和内容门禁错误不会自动重放。`stage_detail` 只包含用户可理解的当前动作和完成计数，不
+暴露 Provider 请求、检查点、Worker、租约或错误栈。
 
 `PAID_WORKFLOW_MAX_CONCURRENCY` 和 `PAID_WORKFLOW_DAILY_LIMIT` 控制的是工作流并发和
 尝试次数，不等于 AFP、Token 或金额预算。

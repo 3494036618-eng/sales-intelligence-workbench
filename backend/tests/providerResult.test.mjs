@@ -18,7 +18,13 @@ function envReader(values = {}) {
 test("provider errors use stable categories and retryability", () => {
   assert.deepEqual(classifyProviderError({ code: "timeout" }), { category: "timeout", retryable: true });
   assert.deepEqual(classifyProviderError({ code: "missing_config" }), { category: "configuration", retryable: false });
+  assert.deepEqual(classifyProviderError({ code: "4003" }), { category: "validation", retryable: false });
+  assert.deepEqual(classifyProviderError({ code: "invalid_query" }), { category: "validation", retryable: false });
   assert.deepEqual(classifyProviderError({ http_status: 401 }), { category: "authentication", retryable: false });
+  assert.deepEqual(
+    classifyProviderError({ code: "10500", message: "Internal Error" }),
+    { category: "upstream", retryable: true },
+  );
   const failure = providerFailure("model", { code: "network_error", message: "connection reset" });
   assert.equal(failure.provider, "model");
   assert.equal(failure.provider_mode, "real");
@@ -113,6 +119,50 @@ test("web search retries the official 10500 temporary-unavailable response once"
   assert.equal(result.attempts, 2);
   assert.equal(calls, 2);
   assert.deepEqual(retryDelays, [2500]);
+});
+
+test("web search retries a 10500 Internal Error response once", async () => {
+  let calls = 0;
+  const provider = new WebSearchProvider({
+    env: envReader({
+      WEB_SEARCH_API_KEY: "test-key",
+      WEB_SEARCH_MAX_RETRIES: "1",
+      WEB_SEARCH_TIMEOUT_MS: "1000",
+    }),
+    fetchImpl: async () => {
+      calls += 1;
+      if (calls === 1) {
+        return {
+          ok: true,
+          status: 200,
+          async json() {
+            return {
+              ResponseMetadata: {
+                RequestId: "request-internal-error",
+                Error: { Code: "10500", Message: "Internal Error" },
+              },
+            };
+          },
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        async json() {
+          return {
+            ResponseMetadata: { RequestId: "request-recovered" },
+            Result: { ResultCount: 0, WebResults: [] },
+          };
+        },
+      };
+    },
+    sleep: async () => {},
+  });
+
+  const result = await provider.search({ query: "测试查询", count: 1 });
+  assert.equal(result.ok, true);
+  assert.equal(result.attempts, 2);
+  assert.equal(calls, 2);
 });
 
 test("web search sends official authority filter and query rewrite fields", async () => {
