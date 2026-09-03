@@ -3,6 +3,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import {
   appCopyFilter,
+  appSourceIdentity,
   assertAppSource,
   assertNodeVersion,
   ensureDirectories,
@@ -30,6 +31,7 @@ if (await waitForHealth(serverAddress().url, 800)) {
 
 const sourceValue = readOption("--source");
 const sourceRoot = assertAppSource(sourceValue ? resolveUserPath(sourceValue) : paths.sourceApp);
+const sourceIdentity = appSourceIdentity(sourceRoot);
 if (path.resolve(sourceRoot) === path.resolve(paths.installedApp)) {
   throw new Error("运行时安装目录不能同时作为源码目录。");
 }
@@ -45,6 +47,10 @@ try {
     filter: (entry) => appCopyFilter(sourceRoot, entry),
   });
   assertAppSource(staging);
+  const stagedIdentity = appSourceIdentity(staging);
+  if (stagedIdentity.sha256 !== sourceIdentity.sha256) {
+    throw new Error("应用包复制后的内容哈希与发行源不一致。");
+  }
 
   if (!skipTests) {
     run(process.execPath, ["--check", "frontend/app.js"], { cwd: staging });
@@ -55,8 +61,20 @@ try {
     });
   }
 
+  const finalStagedIdentity = appSourceIdentity(staging);
+  if (
+    finalStagedIdentity.version !== sourceIdentity.version
+    || finalStagedIdentity.sha256 !== sourceIdentity.sha256
+    || finalStagedIdentity.file_count !== sourceIdentity.file_count
+  ) {
+    throw new Error("应用包测试后的最终内容身份与发行源不一致。");
+  }
+
   fs.writeFileSync(path.join(staging, ".sales-workbench-runtime.json"), `${JSON.stringify({
-    schema_version: 1,
+    schema_version: 2,
+    release_version: sourceIdentity.version,
+    source_tree_sha256: sourceIdentity.sha256,
+    source_file_count: sourceIdentity.file_count,
     source_path: sourceRoot,
     installed_at: new Date().toISOString(),
   }, null, 2)}\n`, { mode: 0o600 });

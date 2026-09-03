@@ -89,6 +89,34 @@ if (command === "list") {
   assert.equal(initialReport.stages.find((item) => item.id === "app")?.status, "pending");
 
   runScript("install.mjs");
+  const installedMetadata = JSON.parse(fs.readFileSync(
+    path.join(isolatedEnv.SALES_WORKBENCH_HOME, "app", ".sales-workbench-runtime.json"),
+    "utf8",
+  ));
+  const installedPackage = JSON.parse(fs.readFileSync(
+    path.join(isolatedEnv.SALES_WORKBENCH_HOME, "app", "backend", "package.json"),
+    "utf8",
+  ));
+  assert.equal(installedMetadata.schema_version, 2);
+  assert.equal(installedMetadata.release_version, installedPackage.version);
+  assert.match(installedMetadata.source_tree_sha256, /^[0-9a-f]{64}$/);
+  assert.ok(installedMetadata.source_file_count > 0);
+  let statusReport = JSON.parse(runScript("status.mjs").stdout);
+  assert.equal(statusReport.integrity.ok, true);
+  const installedFrontend = path.join(isolatedEnv.SALES_WORKBENCH_HOME, "app", "frontend", "index.html");
+  const originalFrontend = fs.readFileSync(installedFrontend);
+  fs.appendFileSync(installedFrontend, "\n<!-- integrity tamper test -->\n");
+  const tamperedStatus = runScript("status.mjs", [], { expectSuccess: false });
+  assert.notEqual(tamperedStatus.status, 0);
+  statusReport = JSON.parse(tamperedStatus.stdout);
+  assert.equal(statusReport.integrity.ok, false);
+  const tamperedSetup = JSON.parse(runScript("setup.mjs", ["--json"]).stdout);
+  assert.equal(tamperedSetup.stages.find((item) => item.id === "app")?.status, "pending");
+  assert.notEqual(runScript("doctor.mjs", [], { expectSuccess: false }).status, 0);
+  assert.notEqual(runScript("start.mjs", ["--dry-run"], { expectSuccess: false }).status, 0);
+  fs.writeFileSync(installedFrontend, originalFrontend);
+  statusReport = JSON.parse(runScript("status.mjs").stdout);
+  assert.equal(statusReport.integrity.ok, true);
   runScript("configure.mjs", ["--from-env-file", fixtureEnv]);
   const configureSource = fs.readFileSync(path.join(scriptsDir, "configure.mjs"), "utf8");
   assert.doesNotMatch(configureSource, /OpenViking 数据面 API Key|OpenViking 专用 API Key/);

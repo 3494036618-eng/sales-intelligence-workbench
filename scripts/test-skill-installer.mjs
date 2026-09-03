@@ -56,9 +56,21 @@ function assertInstalled(client) {
   assert.equal(fs.existsSync(path.join(client.target, ".DS_Store")), false);
   const installedSkill = fs.readFileSync(installedSkillPath, "utf8");
   assert.match(installedSkill, /## 远程 Skill 入口/);
-  assert.match(installedSkill, /skills\/sales-intelligence-workbench\/SKILL\.md/);
-  assert.match(installedSkill, /node scripts\/validate-skill-package\.mjs/);
-  assert.match(installedSkill, /node scripts\/test-skill-installer\.mjs/);
+  assert.match(installedSkill, /volcengine\/ai-app-lab\/blob\/main\/demohouse\/sales-intelligence-workbench\/skills\/sales-intelligence-workbench\/SKILL\.md/);
+  assert.match(installedSkill, /固定发行版本：v0\.10\.1/);
+  assert.match(installedSkill, /3494036618-eng\/sales-intelligence-workbench/);
+  assert.match(installedSkill, /不能下载 AI App Lab 的整个 monorepo/);
+  assert.match(installedSkill, /release_root="\$\(mktemp -d/);
+  assert.match(installedSkill, /\$releaseRoot = Join-Path/);
+  assert.match(installedSkill, /\$LASTEXITCODE -ne 0/);
+  assert.match(installedSkill, /node \(Join-Path \$releaseRoot "scripts\/validate-release-checkout\.mjs"\)/);
+  assert.match(installedSkill, /Remove-Item -LiteralPath \$releaseRoot -Recurse -Force/);
+  assert.match(installedSkill, /git clone --depth 1 --branch v0\.10\.1 --single-branch/);
+  assert.match(installedSkill, /validate-release-checkout\.mjs/);
+  assert.match(installedSkill, /不得复用、修改、清理或覆盖任何已有源码目录/);
+  assert.match(installedSkill, /完整的 `npm run verify`/);
+  assert.doesNotMatch(installedSkill, /<projectDir>/);
+  assert.match(installedSkill, /完整的 `npm run verify`/);
 }
 
 try {
@@ -150,8 +162,8 @@ try {
 
   const publicCommand = spawnSync(process.execPath, [
     commandPrinter,
-    "--repository", "https://github.com/example/sales-workbench",
-    "--ref", "v0.9.1",
+    "--repository", "https://github.com/3494036618-eng/sales-intelligence-workbench",
+    "--ref", "v0.10.1",
   ], {
     cwd: root,
     env: baseEnvironment,
@@ -160,14 +172,43 @@ try {
   assert.equal(publicCommand.status, 0, publicCommand.stderr);
   assert.equal(
     publicCommand.stdout.trim(),
-    "帮我初始化销售助手：https://github.com/example/sales-workbench/blob/v0.9.1/skills/sales-intelligence-workbench/SKILL.md",
+    "帮我初始化销售助手：https://github.com/3494036618-eng/sales-intelligence-workbench/blob/v0.10.1/skills/sales-intelligence-workbench/SKILL.md",
   );
   assert.doesNotMatch(publicCommand.stdout, /sales-assistant-builder\.md/);
+
+  const officialPublicCommand = spawnSync(process.execPath, [
+    commandPrinter,
+    "--official",
+  ], {
+    cwd: root,
+    env: baseEnvironment,
+    encoding: "utf8",
+  });
+  assert.equal(officialPublicCommand.status, 0, officialPublicCommand.stderr);
+  assert.equal(
+    officialPublicCommand.stdout.trim(),
+    "帮我初始化销售助手：https://github.com/volcengine/ai-app-lab/blob/main/demohouse/sales-intelligence-workbench/skills/sales-intelligence-workbench/SKILL.md",
+  );
+
+  const officialCommit = "0123456789abcdef0123456789abcdef01234567";
+  const officialPinnedCommand = spawnSync(process.execPath, [
+    commandPrinter,
+    "--official-ref", officialCommit,
+  ], {
+    cwd: root,
+    env: baseEnvironment,
+    encoding: "utf8",
+  });
+  assert.equal(officialPinnedCommand.status, 0, officialPinnedCommand.stderr);
+  assert.equal(
+    officialPinnedCommand.stdout.trim(),
+    `帮我初始化销售助手：https://github.com/volcengine/ai-app-lab/blob/${officialCommit}/demohouse/sales-intelligence-workbench/skills/sales-intelligence-workbench/SKILL.md`,
+  );
 
   const nestedPublicCommand = spawnSync(process.execPath, [
     commandPrinter,
     "--repository", "https://github.com/volcengine/ai-app-lab",
-    "--ref", "0123456789abcdef",
+    "--ref", officialCommit,
     "--skill-path", "demohouse/sales-intelligence-workbench/skills/sales-intelligence-workbench/SKILL.md",
   ], {
     cwd: root,
@@ -177,12 +218,12 @@ try {
   assert.equal(nestedPublicCommand.status, 0, nestedPublicCommand.stderr);
   assert.equal(
     nestedPublicCommand.stdout.trim(),
-    "帮我初始化销售助手：https://github.com/volcengine/ai-app-lab/blob/0123456789abcdef/demohouse/sales-intelligence-workbench/skills/sales-intelligence-workbench/SKILL.md",
+    `帮我初始化销售助手：https://github.com/volcengine/ai-app-lab/blob/${officialCommit}/demohouse/sales-intelligence-workbench/skills/sales-intelligence-workbench/SKILL.md`,
   );
 
   const mutableCommand = spawnSync(process.execPath, [
     commandPrinter,
-    "--repository", "https://github.com/example/sales-workbench",
+    "--repository", "https://github.com/3494036618-eng/sales-intelligence-workbench",
     "--ref", "main",
   ], {
     cwd: root,
@@ -190,7 +231,54 @@ try {
     encoding: "utf8",
   });
   assert.equal(mutableCommand.status, 1);
-  assert.match(mutableCommand.stderr, /不能使用 main\/master/);
+  assert.match(mutableCommand.stderr, /vX\.Y\.Z release tag 或完整 40 位 commit SHA/);
+
+  for (const [label, args, errorPattern] of [
+    ["wrong repository", [
+      "--repository", "https://github.com/wrong-owner/sales-intelligence-workbench",
+      "--ref", "v0.10.1",
+    ], /不属于当前固定发行链路/],
+    ["wrong Skill path", [
+      "--repository", "https://github.com/3494036618-eng/sales-intelligence-workbench",
+      "--ref", "v0.10.1",
+      "--skill-path", "skills/not-the-sales-skill/SKILL.md",
+    ], /不属于当前固定发行链路/],
+    ["wrong release version", [
+      "--repository", "https://github.com/3494036618-eng/sales-intelligence-workbench",
+      "--ref", "v0.10.0",
+    ], /不属于当前固定发行链路/],
+    ["HEAD", [
+      "--repository", "https://github.com/3494036618-eng/sales-intelligence-workbench",
+      "--ref", "HEAD",
+    ], /vX\.Y\.Z release tag 或完整 40 位 commit SHA/],
+    ["refs heads main", [
+      "--repository", "https://github.com/3494036618-eng/sales-intelligence-workbench",
+      "--ref", "refs\/heads\/main",
+    ], /vX\.Y\.Z release tag 或完整 40 位 commit SHA/],
+    ["official conflict", ["--official", "--ref", "v0.10.1"], /不能与其他参数组合/],
+    ["short official SHA", ["--official-ref", "0123456789abcdef"], /完整 40 位 commit SHA/],
+  ]) {
+    const rejected = spawnSync(process.execPath, [commandPrinter, ...args], {
+      cwd: root,
+      env: baseEnvironment,
+      encoding: "utf8",
+    });
+    assert.equal(rejected.status, 1, `${label} 应被拒绝。`);
+    assert.match(rejected.stderr, errorPattern, `${label} 错误信息不明确。`);
+    assert.doesNotMatch(rejected.stderr, /\n\s+at |file:\/\/|\/Users\//, `${label} 不应泄露堆栈或本机路径。`);
+  }
+
+  const customCommand = spawnSync(process.execPath, [
+    commandPrinter,
+    "--repository", "https://github.com/example/sales-workbench",
+    "--ref", "v1.2.3",
+    "--allow-custom-repository",
+  ], {
+    cwd: root,
+    env: baseEnvironment,
+    encoding: "utf8",
+  });
+  assert.equal(customCommand.status, 0, customCommand.stderr);
 
   process.stdout.write(
     "Codex 与 Claude Code Skill 隔离安装、双端安装、重复安装保护、强制更新和安全 onboarding 检查通过。\n",
