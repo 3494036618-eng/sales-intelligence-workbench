@@ -10,6 +10,16 @@ const commandPrinter = path.join(root, "scripts", "print-public-skill-command.mj
 const temporaryHome = fs.mkdtempSync(path.join(os.tmpdir(), "sales-workbench-skill-"));
 const codexHome = path.join(temporaryHome, "codex");
 const claudeConfigDir = path.join(temporaryHome, "claude");
+process.on("uncaughtExceptionMonitor", (error) => {
+  if (process.env.GITHUB_ACTIONS !== "true") return;
+  const message = String(error?.message || error || "unknown failure")
+    .split(temporaryHome).join("<temporary-home>")
+    .split(root).join("<repository>")
+    .replace(/%/g, "%25")
+    .replace(/\r/g, "%0D")
+    .replace(/\n/g, "%0A");
+  process.stderr.write(`::error title=Skill installer isolation failure::${message}\n`);
+});
 const baseEnvironment = {
   ...process.env,
   HOME: temporaryHome,
