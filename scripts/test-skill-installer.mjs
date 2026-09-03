@@ -58,7 +58,7 @@ function run(client, args, expectedStatus) {
   return result;
 }
 
-function outputTail(value, limit = 12_000) {
+function outputTail(value, limit = 3_500) {
   const text = String(value || "");
   return text.length <= limit ? text : `[前置输出已省略]\n${text.slice(-limit)}`;
 }
