@@ -63,6 +63,11 @@ function assertInstalled(client) {
   assert.ok(fs.existsSync(installedSkillPath));
   assert.ok(fs.existsSync(path.join(client.target, "scripts", "onboard.mjs")));
   assert.ok(fs.existsSync(path.join(client.target, "assets", "app", "backend", ".env.example")));
+  assert.ok(fs.existsSync(path.join(client.target, "assets", "app", "backend", "package.json")));
+  assert.ok(fs.existsSync(path.join(client.target, "assets", "app", "backend", "src", "server.js")));
+  assert.ok(fs.existsSync(path.join(client.target, "assets", "app", "frontend", "index.html")));
+  assert.ok(fs.existsSync(path.join(client.target, "assets", "app", "frontend", "app.js")));
+  assert.ok(fs.existsSync(path.join(client.target, "assets", "app", "supabase", "migrations")));
   assert.equal(fs.existsSync(path.join(client.target, ".DS_Store")), false);
   const installedSkill = fs.readFileSync(installedSkillPath, "utf8");
   assert.match(installedSkill, /## 远程 Skill 入口/);
