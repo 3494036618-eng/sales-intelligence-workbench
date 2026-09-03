@@ -58,6 +58,11 @@ function run(client, args, expectedStatus) {
   return result;
 }
 
+function outputTail(value, limit = 12_000) {
+  const text = String(value || "");
+  return text.length <= limit ? text : `[前置输出已省略]\n${text.slice(-limit)}`;
+}
+
 function assertInstalled(client) {
   const installedSkillPath = path.join(client.target, "SKILL.md");
   assert.ok(fs.existsSync(installedSkillPath));
@@ -219,7 +224,7 @@ try {
   assert.equal(
     onboarding.status,
     0,
-    `onboarding 退出码异常。\nstdout:\n${onboarding.stdout}\nstderr:\n${onboarding.stderr}`,
+    `onboarding 退出码异常。\nstdout:\n${outputTail(onboarding.stdout)}\nstderr:\n${outputTail(onboarding.stderr)}`,
   );
   assert.match(onboarding.stdout, /当前阶段：app/);
   assert.match(onboarding.stdout, /已安全暂停在“agent_plan”阶段/);
