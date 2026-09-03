@@ -102,7 +102,13 @@ export async function validateImmutableRelease(report, fetchImpl = fetch) {
   assert.equal(release.draft, false, "GitHub Release 仍是草稿。");
   assert.equal(release.prerelease, false, "GitHub Release 不能是预发布版本。");
   assert.equal(release.immutable, true, "GitHub Release 必须启用 immutable，防止 tag 或资产被事后替换。");
-  assert.equal(String(release.target_commitish || "").toLowerCase(), report.commit, "GitHub Release commit 与 checkout 不一致。");
+  const targetCommitish = String(release.target_commitish || "").toLowerCase();
+  // GitHub retains the selected branch name here when a Release is created
+  // from an existing tag. The remote tag is resolved and compared with the
+  // checkout separately; only an explicit commit SHA can be compared here.
+  if (/^[0-9a-f]{40}$/i.test(targetCommitish)) {
+    assert.equal(targetCommitish, report.commit, "GitHub Release commit 与 checkout 不一致。");
+  }
 }
 
 function readOption(name) {

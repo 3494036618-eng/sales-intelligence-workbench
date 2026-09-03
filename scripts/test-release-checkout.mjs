@@ -90,6 +90,10 @@ try {
   };
   const response = (body) => async () => ({ status: 200, json: async () => body });
   await validateImmutableRelease({ tag: "v0.10.1", commit: head }, response(immutableRelease));
+  await validateImmutableRelease(
+    { tag: "v0.10.1", commit: head },
+    response({ ...immutableRelease, target_commitish: "main" }),
+  );
   await assert.rejects(
     validateImmutableRelease(
       { tag: "v0.10.1", commit: head },
