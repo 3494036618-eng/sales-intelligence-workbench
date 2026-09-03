@@ -141,7 +141,10 @@ if (command === "list") {
   const credentialsPath = path.join(isolatedEnv.SALES_WORKBENCH_CONFIG_HOME, "credentials.env");
   const credentialsConfig = fs.readFileSync(credentialsPath, "utf8");
   assert.match(credentialsConfig, new RegExp(fakeOpenVikingApiKey));
-  assert.equal(fs.statSync(credentialsPath).mode & 0o777, 0o600);
+  const credentialsStatus = fs.lstatSync(credentialsPath);
+  assert.equal(credentialsStatus.isFile(), true);
+  assert.equal(credentialsStatus.isSymbolicLink(), false);
+  if (process.platform !== "win32") assert.equal(credentialsStatus.mode & 0o777, 0o600);
   runtimeConfig = fs.readFileSync(path.join(isolatedEnv.SALES_WORKBENCH_CONFIG_HOME, "runtime.env"), "utf8");
   assert.match(runtimeConfig, /OPENVIKING_RESOURCE_ID="ov-self-test"/);
   assert.match(runtimeConfig, /OPENVIKING_COLLECTION_NAME="sales_memory"/);

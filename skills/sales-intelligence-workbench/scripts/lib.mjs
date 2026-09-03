@@ -576,7 +576,9 @@ export async function waitForHealth(url, timeoutMs = 20_000) {
 
 export function credentialFileIsPrivate() {
   try {
-    return (fs.statSync(paths.credentialsFile).mode & 0o077) === 0;
+    const status = fs.lstatSync(paths.credentialsFile);
+    if (!status.isFile() || status.isSymbolicLink()) return false;
+    return process.platform === "win32" || (status.mode & 0o077) === 0;
   } catch {
     return false;
   }
