@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -6,7 +7,24 @@ import { fileURLToPath } from "node:url";
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const backendDir = path.resolve(scriptDir, "..");
 const projectRoot = path.resolve(backendDir, "..");
-const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
+
+function npmInvocation(args) {
+  const cli = [
+    process.env.npm_execpath,
+    path.join(path.dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js"),
+  ].find((candidate) => candidate && /\.(?:c?m?js)$/i.test(candidate) && fs.existsSync(candidate));
+  if (cli) return { command: process.execPath, args: [cli, ...args] };
+  if (process.platform === "win32") {
+    return {
+      command: process.env.ComSpec || "cmd.exe",
+      args: ["/d", "/s", "/c", ["npm", ...args].join(" ")],
+    };
+  }
+  return { command: "npm", args };
+}
+
+const npmTest = npmInvocation(["test"]);
+const npmSecretScan = npmInvocation(["run", "release:secrets"]);
 
 const steps = [
   {
@@ -23,14 +41,14 @@ const steps = [
   },
   {
     name: "后端自动化测试",
-    command: npmCommand,
-    args: ["test"],
+    command: npmTest.command,
+    args: npmTest.args,
     cwd: backendDir,
   },
   {
     name: "发布密钥扫描",
-    command: npmCommand,
-    args: ["run", "release:secrets"],
+    command: npmSecretScan.command,
+    args: npmSecretScan.args,
     cwd: backendDir,
   },
   {

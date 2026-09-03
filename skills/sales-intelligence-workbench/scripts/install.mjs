@@ -19,6 +19,21 @@ import {
   writeConfiguration,
 } from "./lib.mjs";
 
+function npmInvocation(args) {
+  const cli = [
+    process.env.npm_execpath,
+    path.join(path.dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js"),
+  ].find((candidate) => candidate && /\.(?:c?m?js)$/i.test(candidate) && fs.existsSync(candidate));
+  if (cli) return { command: process.execPath, args: [cli, ...args] };
+  if (process.platform === "win32") {
+    return {
+      command: process.env.ComSpec || "cmd.exe",
+      args: ["/d", "/s", "/c", ["npm", ...args].join(" ")],
+    };
+  }
+  return { command: "npm", args };
+}
+
 assertNodeVersion();
 ensureDirectories();
 
@@ -59,7 +74,8 @@ try {
   if (!skipTests) {
     run(process.execPath, ["--check", "frontend/app.js"], { cwd: staging });
     run(process.execPath, ["--check", "frontend/text-format.js"], { cwd: staging });
-    run(process.platform === "win32" ? "npm.cmd" : "npm", ["test"], {
+    const npmTest = npmInvocation(["test"]);
+    run(npmTest.command, npmTest.args, {
       cwd: path.join(staging, "backend"),
       env: { ...process.env, NODE_ENV: "test" },
     });

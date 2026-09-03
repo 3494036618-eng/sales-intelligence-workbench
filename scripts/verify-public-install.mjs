@@ -41,6 +41,21 @@ function run(command, args, options = {}) {
   return options.capture === false ? "" : result.stdout.trim();
 }
 
+function npmInvocation(args) {
+  const cli = [
+    process.env.npm_execpath,
+    path.join(path.dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js"),
+  ].find((candidate) => candidate && /\.(?:c?m?js)$/i.test(candidate) && fs.existsSync(candidate));
+  if (cli) return { command: process.execPath, args: [cli, ...args] };
+  if (process.platform === "win32") {
+    return {
+      command: process.env.ComSpec || "cmd.exe",
+      args: ["/d", "/s", "/c", ["npm", ...args].join(" ")],
+    };
+  }
+  return { command: "npm", args };
+}
+
 function remoteTagCommit() {
   const output = run("git", [
     "ls-remote",
@@ -170,7 +185,8 @@ try {
     "--expected-commit",
     releaseCommit,
   ], { cwd: checkout, capture: false });
-  run(process.platform === "win32" ? "npm.cmd" : "npm", ["run", "verify"], {
+  const npmVerify = npmInvocation(["run", "verify"]);
+  run(npmVerify.command, npmVerify.args, {
     cwd: checkout,
     capture: false,
   });
