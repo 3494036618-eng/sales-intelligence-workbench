@@ -285,6 +285,8 @@ node skills/sales-intelligence-workbench/scripts/import-feishu.mjs \
   --doc "https://example.feishu.cn/wiki/..."
 ```
 
+> 文档中的 `0600`/`0700` 是 macOS/Linux 权限表达。Windows 下文件保存在当前用户的配置或状态目录，继承该用户目录的 NTFS ACL；运行时同时拒绝符号链接和非普通文件。
+
 会话导入支持 `--p2p-user <联系人姓名>` 或 `--chat-id <oc_会话ID>`；云文档只接受完整链接。启用 `FEISHU_CLI_IMPORT_ENABLED=true` 后，登录用户也可以在“历史资料”模块点击“导入飞书资料”，选择会话或云文档并查看本机任务进度。两种入口调用同一条受控链路：正文只写入 Agent 记忆（OpenViking），AI Native 应用开发底座（Supabase）只保存来源、内容指纹、增量游标和 OpenViking 引用。详见 [飞书导入说明](skills/sales-intelligence-workbench/references/feishu-import.md)。
 
 ## 运维
