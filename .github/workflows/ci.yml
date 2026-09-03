@@ -24,5 +24,20 @@ jobs:
           cache: npm
       - name: Install locked dependencies
         run: npm ci
+      - name: Diagnose Windows public release scan
+        if: runner.os == 'Windows'
+        run: npm run release:validate
+      - name: Diagnose Windows checkout validator
+        if: runner.os == 'Windows'
+        run: npm run release:test:checkout
+      - name: Diagnose Windows Skill package
+        if: runner.os == 'Windows'
+        run: npm run skill:validate
+      - name: Diagnose Windows Skill installer
+        if: runner.os == 'Windows'
+        run: npm run skill:test
+      - name: Diagnose Windows backend release
+        if: runner.os == 'Windows'
+        run: npm --prefix backend run release:verify
       - name: Run complete offline release verification
         run: npm run verify
