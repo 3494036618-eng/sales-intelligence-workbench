@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const commandPrinter = path.join(root, "scripts", "print-public-skill-command.mjs");
@@ -88,6 +88,58 @@ function assertInstalled(client) {
   assert.match(installedSkill, /完整的 `npm run verify`/);
 }
 
+function probeInstalledSource(client, environment) {
+  const installedLibUrl = pathToFileURL(path.join(client.target, "scripts", "lib.mjs")).href;
+  const probe = spawnSync(process.execPath, [
+    "--input-type=module",
+    "--eval",
+    `
+      import fs from "node:fs";
+      import path from "node:path";
+      import { paths } from ${JSON.stringify(installedLibUrl)};
+      const required = [
+        "backend/package.json",
+        "backend/src/server.js",
+        "frontend/index.html",
+        "frontend/app.js",
+        "supabase/migrations",
+      ];
+      process.stdout.write(JSON.stringify({
+        skillRoot: paths.skillRoot,
+        sourceApp: paths.sourceApp,
+        required: Object.fromEntries(required.map((relative) => [
+          relative,
+          fs.existsSync(path.join(paths.sourceApp, relative)),
+        ])),
+      }));
+    `,
+  ], {
+    env: environment,
+    encoding: "utf8",
+  });
+  assert.equal(
+    probe.status,
+    0,
+    `已安装 Skill 源目录探针执行失败。\nstdout:\n${probe.stdout}\nstderr:\n${probe.stderr}`,
+  );
+  const report = JSON.parse(probe.stdout);
+  assert.equal(
+    fs.realpathSync(report.skillRoot),
+    fs.realpathSync(client.target),
+    `子进程 Skill 根目录解析错误：${probe.stdout}`,
+  );
+  assert.equal(
+    fs.realpathSync(report.sourceApp),
+    fs.realpathSync(path.join(client.target, "assets", "app")),
+    `子进程应用源目录解析错误：${probe.stdout}`,
+  );
+  assert.deepEqual(
+    Object.values(report.required),
+    [true, true, true, true, true],
+    `子进程无法读取完整应用包：${probe.stdout}`,
+  );
+}
+
 try {
   for (const client of clients) {
     const installed = run(client, [], 0);
@@ -142,6 +194,7 @@ try {
     SALES_WORKBENCH_STATE_HOME: path.join(temporaryHome, "state"),
   };
   const codexTarget = clients[0].target;
+  probeInstalledSource(clients[0], onboardingEnvironment);
   const help = spawnSync(process.execPath, [
     path.join(codexTarget, "scripts", "onboard.mjs"),
     "--help",
