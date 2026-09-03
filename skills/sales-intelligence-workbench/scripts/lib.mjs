@@ -411,8 +411,16 @@ export function assertInstalledAppIntegrity() {
 }
 
 export function appCopyFilter(rootDir, sourcePath) {
-  const relative = path.relative(rootDir, sourcePath);
+  const canonical = (value) => {
+    try {
+      return fs.realpathSync.native(value);
+    } catch {
+      return path.resolve(value);
+    }
+  };
+  const relative = path.relative(canonical(rootDir), canonical(sourcePath));
   if (!relative) return true;
+  if (relative.startsWith("..") || path.isAbsolute(relative)) return false;
   const segments = relative.split(path.sep);
   const first = segments[0];
   if (!["backend", "frontend", "supabase"].includes(first)) return false;

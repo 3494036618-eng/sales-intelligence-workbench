@@ -46,7 +46,11 @@ try {
     force: true,
     filter: (entry) => appCopyFilter(sourceRoot, entry),
   });
-  assertAppSource(staging);
+  try {
+    assertAppSource(staging);
+  } catch (error) {
+    throw new Error(`应用包复制后不完整：${error instanceof Error ? error.message : String(error)}`);
+  }
   const stagedIdentity = appSourceIdentity(staging);
   if (stagedIdentity.sha256 !== sourceIdentity.sha256) {
     throw new Error("应用包复制后的内容哈希与发行源不一致。");
