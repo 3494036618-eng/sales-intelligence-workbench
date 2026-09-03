@@ -88,6 +88,15 @@ try {
   steps.forEach(runStep);
   console.log(`\n离线发布验收通过：${steps.length}/${steps.length} 项完成。`);
 } catch (error) {
-  console.error(`\n离线发布验收失败：${error?.message || String(error)}`);
+  const message = `离线发布验收失败：${error?.message || String(error)}`;
+  console.error(`\n${message}`);
+  if (process.env.GITHUB_ACTIONS === "true") {
+    const annotation = message
+      .split(projectRoot).join("<repository>")
+      .replace(/%/g, "%25")
+      .replace(/\r/g, "%0D")
+      .replace(/\n/g, "%0A");
+    process.stderr.write(`::error title=Offline release verification failure::${annotation}\n`);
+  }
   process.exitCode = 1;
 }
