@@ -57,7 +57,7 @@ const canonicalReleaseRef = `v${packageJson.version}`;
 const canonicalReleaseSkillUrl = `${canonicalRepository}/blob/${canonicalReleaseRef}/skills/sales-intelligence-workbench/SKILL.md`;
 const officialSkillUrl = "https://github.com/volcengine/ai-app-lab/blob/main/demohouse/sales-intelligence-workbench/skills/sales-intelligence-workbench/SKILL.md";
 
-assert.match(skill, /^---\nname: sales-intelligence-workbench\n/m);
+assert.match(skill, /^---\r?\nname: sales-intelligence-workbench\r?\n/m);
 assert.match(agent, /\$sales-intelligence-workbench/);
 assert.match(agent, /allow_implicit_invocation:\s*true/);
 assert.match(skill, /onboard\.mjs/);
